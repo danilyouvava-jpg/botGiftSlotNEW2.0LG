@@ -193,23 +193,7 @@ async function seedPromos() {
     const promos = [
         { code: 'SET', reward: 3, maxUsages: 0 },
         { code: 'COINS', reward: 10, maxUsages: 0 },
-        { code: 'DGVDJA341KV400-', reward: 400, maxUsages: 1 },
-        { code: 'PGBDF60', reward: 60, maxUsages: 1 },
-        { code: 'GDFYLXB30', reward: 30, maxUsages: 1 },
-        { code: 'MFDSCV30', reward: 30, maxUsages: 1 },
-        { code: 'FGBRCAJKV30', reward: 30, maxUsages: 1 },
-        { code: 'VDFNNRFDS30', reward: 30, maxUsages: 1 },
-        { code: 'SKHNDB30', reward: 30, maxUsages: 1 },
-        { code: 'MGKDFC30', reward: 30, maxUsages: 1 },
-        { code: 'NNAKFLAS200', reward: 200, maxUsages: 1 },
-        { code: 'SAFVADFASS100', reward: 100, maxUsages: 1 },
-        { code: 'X2KMVDASDD200F', reward: 200, maxUsages: 1 },
-        { code: 'NHFMVLAJFG300', reward: 300, maxUsages: 1 },
-        { code: 'FKFMMFKLLDJVKL1000', reward: 1000, maxUsages: 1 },
-        { code: 'DNVKDLAMFMVKQ1000S', reward: 1000, maxUsages: 1 },
-        { code: 'HFLVORMLS20', reward: 20, maxUsages: 1 },
-        { code: 'GANFKVIK50', reward: 50, maxUsages: 1 },
-        { code: 'FVMAKSS60', reward: 60, maxUsages: 1 },
+        { code: 'NEWHOME', reward: 20, maxUsages: 0 },
     ];
 
     for (const p of promos) {
@@ -220,7 +204,7 @@ async function seedPromos() {
         `, [p.code, p.reward, p.maxUsages]);
     }
     // Remove old promos
-    const oldCodes = ['GIFTUFC', 'GIFTSL', 'SUCHKA', 'MONKEY', 'FREE10', 'GAMEUP', 'SANTA', 'NWESISTEM', 'NEWSISTEM', 'BONUSSS', 'NEWSTART', 'CHINA', 'LOL'];
+    const oldCodes = ['GIFTUFC', 'GIFTSL', 'SUCHKA', 'MONKEY', 'FREE10', 'GAMEUP', 'SANTA', 'NWESISTEM', 'NEWSISTEM', 'BONUSSS', 'NEWSTART', 'CHINA', 'LOL', 'DGVDJA341KV400-', 'PGBDF60', 'GDFYLXB30', 'MFDSCV30', 'FGBRCAJKV30', 'VDFNNRFDS30', 'SKHNDB30', 'MGKDFC30', 'NNAKFLAS200', 'SAFVADFASS100', 'X2KMVDASDD200F', 'NHFMVLAJFG300', 'FKFMMFKLLDJVKL1000', 'DNVKDLAMFMVKQ1000S', 'HFLVORMLS20', 'GANFKVIK50', 'FVMAKSS60', 'NEWHOME'];
     for (const code of oldCodes) {
         await pool.query('DELETE FROM promocodes WHERE code = $1', [code]);
     }
