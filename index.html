@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+    <title>Telegram Slots</title>
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <link rel="preload" href="/durovslot.png" as="image" fetchpriority="high">
+    <link rel="preload" href="/flourslot.png" as="image" fetchpriority="high">
+    <link rel="preload" href="/wildkusaka.png" as="image">
+    <link rel="preload" href="/coinflow.png" as="image">
+    <link rel="preload" href="/moneta.svg" as="image">
+    <link rel="preload" href="/rediska.tgs" as="fetch" crossorigin>
+    <link rel="preload" href="/chpic.su_-_Loving_Gift_by_EmojiRu_Bot_006.tgs" as="fetch" crossorigin>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+      :root {
+        --tg-bg: #17212b;
+        --tg-secondary: #232e3c;
+        --tg-accent: #5288c1;
+        --tg-text: #ffffff;
+        --tg-hint: #707579;
+      }
+      
+      body {
+        background-color: var(--tg-bg);
+        color: var(--tg-text);
+        overscroll-behavior: none;
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+        -webkit-font-smoothing: antialiased;
+        background-image: 
+          radial-gradient(circle at 50% 0%, #2b3a4a 0%, transparent 60%),
+          radial-gradient(circle at 80% 80%, #1f2936 0%, transparent 40%);
+        min-height: 100vh;
+      }
+
+      /* Vertical Blur Animation for spinning reels - Optimized (Removed Blur) */
+      @keyframes reel-blur {
+        0% { transform: translateY(0); opacity: 1; }
+        50% { transform: translateY(20px); opacity: 0.8; }
+        100% { transform: translateY(0); opacity: 1; }
+      }
+
+      @keyframes spinReel {
+        0% { transform: translateY(-33.33%); }
+        100% { transform: translateY(0%); }
+      }
+
+      .animate-reel-spin {
+        animation: reel-blur 0.1s infinite linear;
+        will-change: transform, opacity;
+      }
+
+      .glass-panel {
+        background: rgba(35, 46, 60, 0.85);
+        /* backdrop-filter: blur(12px); - Disabled for performance */
+        border: 1px solid rgba(255, 255, 255, 0.08);
+      }
+    </style>
+    <script type="importmap">
+      {
+        "imports": {
+          "react": "https://aistudiocdn.com/react@^19.2.0",
+          "react-dom/": "https://aistudiocdn.com/react-dom@^19.2.0/",
+          "react/": "https://aistudiocdn.com/react@^19.2.0/",
+          "lucide-react": "https://aistudiocdn.com/lucide-react@^0.554.0",
+          "framer-motion": "https://aistudiocdn.com/framer-motion@^12.23.24"
+        }
+      }
+    </script>
+  <link rel="stylesheet" href="/index.css">
+</head>
+  <body>
+    <div id="root"></div>
+  <script type="module" src="/index.tsx"></script>
+</body>
+</html>
