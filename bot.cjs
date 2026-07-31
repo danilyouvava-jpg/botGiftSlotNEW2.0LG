@@ -191,8 +191,6 @@ async function usePromo(code, userId) {
 
 async function seedPromos() {
     const promos = [
-        { code: 'SET', reward: 3, maxUsages: 0 },
-        { code: 'COINS', reward: 10, maxUsages: 0 },
         { code: 'NEWHOME', reward: 20, maxUsages: 0 },
     ];
 
@@ -204,13 +202,10 @@ async function seedPromos() {
         `, [p.code, p.reward, p.maxUsages]);
     }
     // Remove old promos
-    const oldCodes = ['GIFTUFC', 'GIFTSL', 'SUCHKA', 'MONKEY', 'FREE10', 'GAMEUP', 'SANTA', 'NWESISTEM', 'NEWSISTEM', 'BONUSSS', 'NEWSTART', 'CHINA', 'LOL', 'DGVDJA341KV400-', 'PGBDF60', 'GDFYLXB30', 'MFDSCV30', 'FGBRCAJKV30', 'VDFNNRFDS30', 'SKHNDB30', 'MGKDFC30', 'NNAKFLAS200', 'SAFVADFASS100', 'X2KMVDASDD200F', 'NHFMVLAJFG300', 'FKFMMFKLLDJVKL1000', 'DNVKDLAMFMVKQ1000S', 'HFLVORMLS20', 'GANFKVIK50', 'FVMAKSS60', 'NEWHOME'];
+    const oldCodes = ['GIFTUFC', 'GIFTSL', 'SUCHKA', 'MONKEY', 'FREE10', 'GAMEUP', 'SANTA', 'NWESISTEM', 'NEWSISTEM', 'BONUSSS', 'NEWSTART', 'CHINA', 'LOL', 'DGVDJA341KV400-', 'PGBDF60', 'GDFYLXB30', 'MFDSCV30', 'FGBRCAJKV30', 'VDFNNRFDS30', 'SKHNDB30', 'MGKDFC30', 'NNAKFLAS200', 'SAFVADFASS100', 'X2KMVDASDD200F', 'NHFMVLAJFG300', 'FKFMMFKLLDJVKL1000', 'DNVKDLAMFMVKQ1000S', 'HFLVORMLS20', 'GANFKVIK50', 'FVMAKSS60', 'NEWHOME', 'SET', 'COINS'];
     for (const code of oldCodes) {
         await pool.query('DELETE FROM promocodes WHERE code = $1', [code]);
     }
-    // Ensure SET reward is correct
-    await pool.query('UPDATE promocodes SET reward = 3, max_usages = 0 WHERE code = $1', ['SET']);
-    await pool.query('UPDATE promocodes SET reward = 10, max_usages = 0 WHERE code = $1', ['COINS']);
 }
 
 async function getAllBalances() {
