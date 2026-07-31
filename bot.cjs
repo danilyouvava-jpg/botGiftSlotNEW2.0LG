@@ -3,6 +3,7 @@ const path = require('path');
 const express = require('express');
 const cors = require('cors');
 const { Telegraf } = require('telegraf');
+const { Pool } = require('pg');
 
 // --- Configuration Loading ---
 let token = process.env.BOT_TOKEN || process.env.TELEGRAM_BOT_TOKEN || '';
@@ -10,7 +11,6 @@ let CASINO_URL = (process.env.CASINO_URL || '').replace(/\/+$/, '');
 let ADMIN_ID = '7119839001';
 let BOT_USERNAME = '';
 
-// Skip .env loading in production (Railway sets env vars automatically)
 if ((!token || !CASINO_URL) && process.env.NODE_ENV !== 'production') {
     try {
         const env = fs.readFileSync('.env', 'utf8');
@@ -30,11 +30,8 @@ if ((!token || !CASINO_URL) && process.env.NODE_ENV !== 'production') {
     } catch { }
 }
 
-// Force Admin ID if not set (as per request)
 if (!ADMIN_ID) ADMIN_ID = '7119839001';
-
 if (!token) { console.error('Bot token is missing'); process.exit(1); }
-// Allow CASINO_URL to be empty initially if needed, but better to have it
 if (!CASINO_URL) console.warn('WebApp URL is missing (CASINO_URL)');
 
 // --- Setup ---
@@ -42,421 +39,221 @@ const app = express();
 const bot = new Telegraf(token);
 const PORT = process.env.PORT || 3002;
 
-// Ensure data directory exists for persistent storage
-const DATA_DIR = process.env.RAILWAY_VOLUME_MOUNT_PATH || path.join(__dirname, 'data');
-if (!fs.existsSync(DATA_DIR)) {
-    fs.mkdirSync(DATA_DIR, { recursive: true });
-}
-
-const DB_FILE = path.join(DATA_DIR, 'transactions.json');
-const BALANCES_FILE = path.join(DATA_DIR, 'balances.json');
-const PROMOCODES_FILE = path.join(DATA_DIR, 'promocodes.json');
-const REFERRALS_FILE = path.join(DATA_DIR, 'referrals.json');
-const ROULETTE_FILE = path.join(DATA_DIR, 'roulette.json');
-const NOTIFICATIONS_FILE = path.join(DATA_DIR, 'notifications.json');
-
 app.use(cors());
 app.use(express.json());
-// Serve static files from the 'dist' directory (Vite build output)
 app.use(express.static(path.join(__dirname, 'dist')));
 
-// --- One-time global balances reset ---
-try {
-    const RESET_MARK = path.join(DATA_DIR, 'reset_balances.done');
-    if (!fs.existsSync(RESET_MARK)) {
-        fs.writeFileSync(BALANCES_FILE, JSON.stringify({}, null, 2));
-        fs.writeFileSync(RESET_MARK, new Date().toISOString());
-        console.log('Global balances reset: all user balances set to 0');
+// --- PostgreSQL ---
+const pool = new Pool({
+    connectionString: process.env.DATABASE_URL,
+    ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false
+});
+
+async function initDB() {
+    const client = await pool.connect();
+    try {
+        await client.query(`
+            CREATE TABLE IF NOT EXISTS balances (
+                user_id BIGINT PRIMARY KEY,
+                balance NUMERIC DEFAULT 0
+            );
+        `);
+        await client.query(`
+            CREATE TABLE IF NOT EXISTS transactions (
+                id TEXT PRIMARY KEY,
+                timestamp TIMESTAMPTZ DEFAULT NOW(),
+                user_id BIGINT,
+                username TEXT,
+                amount NUMERIC,
+                currency TEXT,
+                payload TEXT,
+                type TEXT,
+                status TEXT,
+                source_user BIGINT
+            );
+        `);
+        await client.query(`
+            CREATE TABLE IF NOT EXISTS referrals (
+                user_id BIGINT PRIMARY KEY,
+                referrer_id BIGINT
+            );
+        `);
+        await client.query(`
+            CREATE TABLE IF NOT EXISTS referral_counts (
+                referrer_id BIGINT,
+                referred_user_id BIGINT UNIQUE
+            );
+        `);
+        await client.query(`
+            CREATE TABLE IF NOT EXISTS roulette (
+                user_id BIGINT PRIMARY KEY,
+                last_spin BIGINT DEFAULT 0
+            );
+        `);
+        await client.query(`
+            CREATE TABLE IF NOT EXISTS notifications (
+                user_id BIGINT PRIMARY KEY,
+                last_notification BIGINT DEFAULT 0
+            );
+        `);
+        await client.query(`
+            CREATE TABLE IF NOT EXISTS promocodes (
+                code TEXT PRIMARY KEY,
+                reward NUMERIC DEFAULT 0,
+                currency TEXT DEFAULT 'STARS',
+                used_by BIGINT[] DEFAULT '{}',
+                max_usages INT DEFAULT 0
+            );
+        `);
+        console.log('Database tables initialized');
+    } finally {
+        client.release();
     }
-} catch (e) {
-    console.error('Global balances reset failed:', e);
 }
 
-// --- Helper Functions ---
-function getBalances() {
-    try {
-        if (fs.existsSync(BALANCES_FILE)) {
-            return JSON.parse(fs.readFileSync(BALANCES_FILE, 'utf8'));
-        }
-    } catch (e) { console.error('Error reading balances:', e); }
-    return {};
+// --- DB Helpers ---
+async function getBalance(userId) {
+    const res = await pool.query('SELECT balance FROM balances WHERE user_id = $1', [userId]);
+    return res.rows.length > 0 ? Number(res.rows[0].balance) : 0;
 }
 
-function saveBalances(balances) {
+async function updateBalance(userId, delta) {
+    const res = await pool.query(`
+        INSERT INTO balances (user_id, balance) VALUES ($1, $2)
+        ON CONFLICT (user_id) DO UPDATE SET balance = ROUND((balances.balance + $2)::numeric, 2)
+        RETURNING balance
+    `, [userId, delta]);
+    return Number(res.rows[0].balance);
+}
+
+async function logTransaction(data) {
     try {
-        fs.writeFileSync(BALANCES_FILE, JSON.stringify(balances, null, 2));
+        await pool.query(`
+            INSERT INTO transactions (id, user_id, username, amount, currency, payload, type, status, source_user)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+            ON CONFLICT (id) DO NOTHING
+        `, [data.id, data.userId, data.username, data.amount, data.currency, data.payload, data.type, data.status, data.sourceUser || null]);
         return true;
     } catch (e) {
-        console.error('Error writing balances:', e);
+        console.error('Error logging transaction:', e);
         return false;
     }
 }
 
-// --- Referrals Helper Functions ---
-function getReferrals() {
-    try {
-        if (fs.existsSync(REFERRALS_FILE)) {
-            return JSON.parse(fs.readFileSync(REFERRALS_FILE, 'utf8'));
-        }
-    } catch (e) { console.error('Error reading referrals:', e); }
-    return {};
+async function getReferrer(userId) {
+    const res = await pool.query('SELECT referrer_id FROM referrals WHERE user_id = $1', [userId]);
+    return res.rows.length > 0 ? res.rows[0].referrer_id : null;
 }
 
-function saveReferrals(referrals) {
-    try {
-        fs.writeFileSync(REFERRALS_FILE, JSON.stringify(referrals, null, 2));
-        return true;
-    } catch (e) {
-        console.error('Error writing referrals:', e);
-        return false;
-    }
+async function setReferral(userId, referrerId) {
+    await pool.query('INSERT INTO referrals (user_id, referrer_id) VALUES ($1, $2) ON CONFLICT (user_id) DO NOTHING', [userId, referrerId]);
+    await pool.query('INSERT INTO referral_counts (referrer_id, referred_user_id) VALUES ($1, $2) ON CONFLICT (referred_user_id) DO NOTHING', [referrerId, userId]);
 }
 
-// --- Roulette Helper Functions ---
-function getRouletteData() {
-    try {
-        if (fs.existsSync(ROULETTE_FILE)) {
-            return JSON.parse(fs.readFileSync(ROULETTE_FILE, 'utf8'));
-        }
-    } catch (e) { console.error('Error reading roulette data:', e); }
-    return {};
+async function getReferralStats(userId) {
+    const res = await pool.query('SELECT COUNT(*) as count FROM referral_counts WHERE referrer_id = $1', [userId]);
+    const count = parseInt(res.rows[0].count);
+    return { count, earned: count * 2 };
 }
 
-function saveRouletteData(data) {
-    try {
-        fs.writeFileSync(ROULETTE_FILE, JSON.stringify(data, null, 2));
-        return true;
-    } catch (e) {
-        console.error('Error writing roulette data:', e);
-        return false;
-    }
+async function getRouletteLastSpin(userId) {
+    const res = await pool.query('SELECT last_spin FROM roulette WHERE user_id = $1', [userId]);
+    return res.rows.length > 0 ? Number(res.rows[0].last_spin) : 0;
 }
 
-function getNotifications() {
-    try {
-        if (fs.existsSync(NOTIFICATIONS_FILE)) {
-            return JSON.parse(fs.readFileSync(NOTIFICATIONS_FILE, 'utf8'));
-        }
-    } catch (e) { console.error('Error reading notifications:', e); }
-    return {};
+async function setRouletteLastSpin(userId, timestamp) {
+    await pool.query(`
+        INSERT INTO roulette (user_id, last_spin) VALUES ($1, $2)
+        ON CONFLICT (user_id) DO UPDATE SET last_spin = $2
+    `, [userId, timestamp]);
 }
 
-function saveNotifications(data) {
-    try {
-        fs.writeFileSync(NOTIFICATIONS_FILE, JSON.stringify(data, null, 2));
-        return true;
-    } catch (e) {
-        console.error('Error writing notifications:', e);
-        return false;
-    }
+async function getNotificationTime(userId) {
+    const res = await pool.query('SELECT last_notification FROM notifications WHERE user_id = $1', [userId]);
+    return res.rows.length > 0 ? Number(res.rows[0].last_notification) : 0;
 }
 
-function getPromocodes() {
-    let promos = {};
-    try {
-        if (fs.existsSync(PROMOCODES_FILE)) {
-            promos = JSON.parse(fs.readFileSync(PROMOCODES_FILE, 'utf8'));
-        }
-    } catch (e) { console.error('Error reading promocodes:', e); }
-
-    if (promos["GIFTUFC"]) {
-        delete promos["GIFTUFC"];
-        savePromocodes(promos);
-    }
-
-    if (promos["GIFTSL"]) {
-        delete promos["GIFTSL"];
-        savePromocodes(promos);
-    }
-
-    if (promos["SUCHKA"]) {
-        delete promos["SUCHKA"];
-        savePromocodes(promos);
-    }
-
-    if (promos["MONKEY"]) {
-        delete promos["MONKEY"];
-        savePromocodes(promos);
-    }
-
-    if (promos["FREE10"]) {
-        delete promos["FREE10"];
-        savePromocodes(promos);
-    }
-
-    if (promos["GAMEUP"]) {
-        delete promos["GAMEUP"];
-        savePromocodes(promos);
-    }
-
-    if (promos["SANTA"]) {
-        delete promos["SANTA"];
-        savePromocodes(promos);
-    }
-
-    if (promos["NWESISTEM"]) {
-        delete promos["NWESISTEM"];
-        savePromocodes(promos);
-    }
-
-    if (promos["NEWSISTEM"]) {
-        delete promos["NEWSISTEM"];
-        savePromocodes(promos);
-    }
-
-    if (promos["BONUSSS"]) {
-        delete promos["BONUSSS"];
-        savePromocodes(promos);
-    }
-
-    if (promos["NEWSTART"]) {
-        delete promos["NEWSTART"];
-        savePromocodes(promos);
-    }
-
-    if (promos["CHINA"]) {
-        delete promos["CHINA"];
-        savePromocodes(promos);
-    }
-
-    if (promos["LOL"]) {
-        delete promos["LOL"];
-        savePromocodes(promos);
-    }
-
-    if (!promos["SET"] || promos["SET"].reward !== 3) {
-        promos["SET"] = {
-            reward: 3,
-            currency: "STARS",
-            usedBy: promos["SET"] ? promos["SET"].usedBy : []
-        };
-        savePromocodes(promos);
-    }
-
-    if (!promos["DGVDJA341KV400-"]) {
-        promos["DGVDJA341KV400-"] = {
-            reward: 400,
-            currency: "STARS",
-            usedBy: [],
-            maxUsages: 1
-        };
-        savePromocodes(promos);
-    }
-
-    if (!promos["PGBDF60"]) {
-        promos["PGBDF60"] = {
-            reward: 60,
-            currency: "STARS",
-            usedBy: [],
-            maxUsages: 1
-        };
-        savePromocodes(promos);
-    }
-
-    if (!promos["GDFYLXB30"]) {
-        promos["GDFYLXB30"] = {
-            reward: 30,
-            currency: "STARS",
-            usedBy: [],
-            maxUsages: 1
-        };
-        savePromocodes(promos);
-    }
-
-    if (!promos["MFDSCV30"]) {
-        promos["MFDSCV30"] = {
-            reward: 30,
-            currency: "STARS",
-            usedBy: [],
-            maxUsages: 1
-        };
-        savePromocodes(promos);
-    }
-
-    if (!promos["FGBRCAJKV30"]) {
-        promos["FGBRCAJKV30"] = {
-            reward: 30,
-            currency: "STARS",
-            usedBy: [],
-            maxUsages: 1
-        };
-        savePromocodes(promos);
-    }
-
-    if (!promos["VDFNNRFDS30"]) {
-        promos["VDFNNRFDS30"] = {
-            reward: 30,
-            currency: "STARS",
-            usedBy: [],
-            maxUsages: 1
-        };
-        savePromocodes(promos);
-    }
-
-    if (!promos["SKHNDB30"] || promos["SKHNDB30"].reward !== 30 || promos["SKHNDB30"].maxUsages !== 1) {
-        promos["SKHNDB30"] = {
-            reward: 30,
-            currency: "STARS",
-            usedBy: promos["SKHNDB30"] ? promos["SKHNDB30"].usedBy : [],
-            maxUsages: 1
-        };
-        savePromocodes(promos);
-    }
-
-    if (!promos["MGKDFC30"] || promos["MGKDFC30"].reward !== 30 || promos["MGKDFC30"].maxUsages !== 1) {
-        promos["MGKDFC30"] = {
-            reward: 30,
-            currency: "STARS",
-            usedBy: promos["MGKDFC30"] ? promos["MGKDFC30"].usedBy : [],
-            maxUsages: 1
-        };
-        savePromocodes(promos);
-    }
-
-    // Ensure COINS is 10 (Update if exists or create)
-    if (!promos["COINS"] || promos["COINS"].reward !== 10) {
-        promos["COINS"] = {
-            reward: 10,
-            currency: "STARS",
-            usedBy: promos["COINS"] ? promos["COINS"].usedBy : []
-        };
-        savePromocodes(promos);
-    }
-
-    if (!promos["NNAKFLAS200"]) {
-        promos["NNAKFLAS200"] = {
-            reward: 200,
-            currency: "STARS",
-            usedBy: [],
-            maxUsages: 1
-        };
-        savePromocodes(promos);
-    }
-
-    if (!promos["SAFVADFASS100"]) {
-        promos["SAFVADFASS100"] = {
-            reward: 100,
-            currency: "STARS",
-            usedBy: [],
-            maxUsages: 1
-        };
-        savePromocodes(promos);
-    }
-
-    if (!promos["X2KMVDASDD200F"]) {
-        promos["X2KMVDASDD200F"] = {
-            reward: 200,
-            currency: "STARS",
-            usedBy: [],
-            maxUsages: 1
-        };
-        savePromocodes(promos);
-    }
-
-    if (!promos["NHFMVLAJFG300"]) {
-        promos["NHFMVLAJFG300"] = {
-            reward: 300,
-            currency: "STARS",
-            usedBy: [],
-            maxUsages: 1
-        };
-        savePromocodes(promos);
-    }
-
-    if (!promos["FKFMMFKLLDJVKL1000"]) {
-        promos["FKFMMFKLLDJVKL1000"] = {
-            reward: 1000,
-            currency: "STARS",
-            usedBy: [],
-            maxUsages: 1
-        };
-        savePromocodes(promos);
-    }
-
-    if (!promos["DNVKDLAMFMVKQ1000S"]) {
-        promos["DNVKDLAMFMVKQ1000S"] = {
-            reward: 1000,
-            currency: "STARS",
-            usedBy: [],
-            maxUsages: 1
-        };
-        savePromocodes(promos);
-    }
-
-    if (!promos["HFLVORMLS20"]) {
-        promos["HFLVORMLS20"] = {
-            reward: 20,
-            currency: "STARS",
-            usedBy: [],
-            maxUsages: 1
-        };
-        savePromocodes(promos);
-    }
-
-    if (!promos["GANFKVIK50"]) {
-        promos["GANFKVIK50"] = {
-            reward: 50,
-            currency: "STARS",
-            usedBy: [],
-            maxUsages: 1
-        };
-        savePromocodes(promos);
-    }
-
-    if (!promos["FVMAKSS60"]) {
-        promos["FVMAKSS60"] = {
-            reward: 60,
-            currency: "STARS",
-            usedBy: [],
-            maxUsages: 1
-        };
-        savePromocodes(promos);
-    }
-
-    return promos;
+async function setNotificationTime(userId, timestamp) {
+    await pool.query(`
+        INSERT INTO notifications (user_id, last_notification) VALUES ($1, $2)
+        ON CONFLICT (user_id) DO UPDATE SET last_notification = $2
+    `, [userId, timestamp]);
 }
 
-function savePromocodes(promos) {
-    try {
-        fs.writeFileSync(PROMOCODES_FILE, JSON.stringify(promos, null, 2));
-        return true;
-    } catch (e) {
-        console.error('Error writing promocodes:', e);
-        return false;
+async function getPromo(code) {
+    const res = await pool.query('SELECT * FROM promocodes WHERE code = $1', [code]);
+    return res.rows.length > 0 ? res.rows[0] : null;
+}
+
+async function usePromo(code, userId) {
+    await pool.query('UPDATE promocodes SET used_by = array_append(used_by, $2) WHERE code = $1', [code, userId]);
+}
+
+async function seedPromos() {
+    const promos = [
+        { code: 'SET', reward: 3, maxUsages: 0 },
+        { code: 'COINS', reward: 10, maxUsages: 0 },
+        { code: 'DGVDJA341KV400-', reward: 400, maxUsages: 1 },
+        { code: 'PGBDF60', reward: 60, maxUsages: 1 },
+        { code: 'GDFYLXB30', reward: 30, maxUsages: 1 },
+        { code: 'MFDSCV30', reward: 30, maxUsages: 1 },
+        { code: 'FGBRCAJKV30', reward: 30, maxUsages: 1 },
+        { code: 'VDFNNRFDS30', reward: 30, maxUsages: 1 },
+        { code: 'SKHNDB30', reward: 30, maxUsages: 1 },
+        { code: 'MGKDFC30', reward: 30, maxUsages: 1 },
+        { code: 'NNAKFLAS200', reward: 200, maxUsages: 1 },
+        { code: 'SAFVADFASS100', reward: 100, maxUsages: 1 },
+        { code: 'X2KMVDASDD200F', reward: 200, maxUsages: 1 },
+        { code: 'NHFMVLAJFG300', reward: 300, maxUsages: 1 },
+        { code: 'FKFMMFKLLDJVKL1000', reward: 1000, maxUsages: 1 },
+        { code: 'DNVKDLAMFMVKQ1000S', reward: 1000, maxUsages: 1 },
+        { code: 'HFLVORMLS20', reward: 20, maxUsages: 1 },
+        { code: 'GANFKVIK50', reward: 50, maxUsages: 1 },
+        { code: 'FVMAKSS60', reward: 60, maxUsages: 1 },
+    ];
+
+    for (const p of promos) {
+        await pool.query(`
+            INSERT INTO promocodes (code, reward, currency, used_by, max_usages)
+            VALUES ($1, $2, 'STARS', '{}', $3)
+            ON CONFLICT (code) DO NOTHING
+        `, [p.code, p.reward, p.maxUsages]);
     }
+    // Remove old promos
+    const oldCodes = ['GIFTUFC', 'GIFTSL', 'SUCHKA', 'MONKEY', 'FREE10', 'GAMEUP', 'SANTA', 'NWESISTEM', 'NEWSISTEM', 'BONUSSS', 'NEWSTART', 'CHINA', 'LOL'];
+    for (const code of oldCodes) {
+        await pool.query('DELETE FROM promocodes WHERE code = $1', [code]);
+    }
+    // Ensure SET reward is correct
+    await pool.query('UPDATE promocodes SET reward = 3, max_usages = 0 WHERE code = $1', ['SET']);
+    await pool.query('UPDATE promocodes SET reward = 10, max_usages = 0 WHERE code = $1', ['COINS']);
 }
 
-function updateBalance(userId, delta) {
-    const balances = getBalances();
-    const current = balances[userId] || 0;
-    // Ensure we don't get floating point weirdness
-    balances[userId] = Number((current + delta).toFixed(2));
-    saveBalances(balances);
-    return balances[userId];
+async function getAllBalances() {
+    const res = await pool.query('SELECT user_id, balance FROM balances');
+    const map = {};
+    for (const row of res.rows) {
+        map[row.user_id] = Number(row.balance);
+    }
+    return map;
 }
 
-// --- Database Helper ---
+async function getAllRoulette() {
+    const res = await pool.query('SELECT user_id, last_spin FROM roulette');
+    const map = {};
+    for (const row of res.rows) {
+        map[row.user_id] = Number(row.last_spin);
+    }
+    return map;
+}
 
-function logTransaction(data) {
-    let transactions = [];
-    try {
-        if (fs.existsSync(DB_FILE)) {
-            transactions = JSON.parse(fs.readFileSync(DB_FILE, 'utf8'));
-        }
-    } catch (e) { console.error('Error reading DB:', e); }
-
-    // Idempotency check
-    if (transactions.some(t => t.id === data.id)) return false;
-
-    transactions.push({
-        timestamp: new Date().toISOString(),
-        ...data
-    });
-
-    try {
-        fs.writeFileSync(DB_FILE, JSON.stringify(transactions, null, 2));
-    } catch (e) { console.error('Error writing DB:', e); }
-    return true;
+async function getAllNotifications() {
+    const res = await pool.query('SELECT user_id, last_notification FROM notifications');
+    const map = {};
+    for (const row of res.rows) {
+        map[row.user_id] = Number(row.last_notification);
+    }
+    return map;
 }
 
 // --- Bot Logic ---
@@ -464,60 +261,43 @@ bot.start(async (ctx) => {
     const startPayload = ctx.startPayload || '';
     const userId = ctx.from.id;
 
-    // Handle referral
     if (startPayload.startsWith('ref')) {
         const referrerId = startPayload.replace('ref', '');
 
-        // Don't allow self-referral
         if (referrerId && referrerId !== String(userId)) {
-            const referrals = getReferrals();
+            const existing = await getReferrer(userId);
 
-            // Check if this user was already referred
-            if (!referrals[userId]) {
-                // Mark user as referred
-                referrals[userId] = referrerId;
+            if (!existing) {
+                await setReferral(userId, parseInt(referrerId));
+                const newBalance = await updateBalance(parseInt(referrerId), 2);
 
-                // Track referrer's referral count
-                if (!referrals[`count_${referrerId}`]) {
-                    referrals[`count_${referrerId}`] = [];
-                }
-                referrals[`count_${referrerId}`].push(userId);
-                saveReferrals(referrals);
-
-                // Give 2 stars to referrer
-                const newBalance = updateBalance(parseInt(referrerId), 2);
-
-                // Notify referrer
-                bot.telegram.sendMessage(referrerId, `🎉 Кто-то перешел по вашей ссылке! Вам начислено 2 звезды. Баланс: ${newBalance}`).catch(() => { });
+                bot.telegram.sendMessage(referrerId, `\u{1F389} \u041A\u0442\u043E-\u0442\u043E \u043F\u0435\u0440\u0435\u0448\u0435\u043B \u043F\u043E \u0432\u0430\u0448\u0435\u0439 \u0441\u0441\u044B\u043B\u043A\u0435! \u0412\u0430\u043C \u043D\u0430\u0447\u0438\u0441\u043B\u0435\u043D\u043E 2 \u0437\u0432\u0435\u0437\u0434\u044B. \u0411\u0430\u043B\u0430\u043D\u0441: ${newBalance}`).catch(() => { });
 
                 console.log(`Referral: ${userId} referred by ${referrerId}`);
             }
         }
     }
 
-    ctx.reply('Испытай удачу в GiftSlot\n🎁 Вводи промокоды на звезды и зарабатывай звезды каждый день', {
+    ctx.reply('\u0418\u0441\u043F\u044B\u0442\u0430\u0439 \u0443\u0434\u0430\u0447\u0443 \u0432 GiftSlot\n\u{1F381} \u0412\u0432\u043E\u0434\u0438 \u043F\u0440\u043E\u043C\u043E\u043A\u043E\u0434\u044B \u043D\u0430 \u0437\u0432\u0435\u0437\u0434\u044B \u0438 \u0437\u0430\u0440\u0430\u0431\u0430\u0442\u044B\u0432\u0430\u0439 \u0437\u0432\u0435\u0437\u0434\u044B \u043A\u0430\u0436\u0434\u044B\u0439 \u0434\u0435\u043D\u044C', {
         reply_markup: {
             inline_keyboard: [
-                [{ text: 'Играть в GiftSlot', web_app: { url: CASINO_URL } }],
-                [{ text: 'Наш канал', url: 'https://t.me/giftslotv' }]
+                [{ text: '\u0418\u0433\u0440\u0430\u0442\u044C \u0432 GiftSlot', web_app: { url: CASINO_URL } }],
+                [{ text: '\u041D\u0430\u0448 \u043A\u0430\u043D\u0430\u043B', url: 'https://t.me/giftslotv' }]
             ]
         }
     });
 });
 
-// Pre-checkout handler (Mandatory for payments)
 bot.on('pre_checkout_query', async (ctx) => {
     await ctx.answerPreCheckoutQuery(true).catch(() => { });
-    // Notify user that payment is being processed (as requested)
-    await bot.telegram.sendMessage(ctx.from.id, '⏳ Обработка вашего подарка...').catch(() => { });
+    await bot.telegram.sendMessage(ctx.from.id, '\u23F3 \u041E\u0431\u0440\u0430\u0431\u043E\u0442\u043A\u0430 \u0432\u0430\u0448\u0435\u0433\u043E \u043F\u043E\u0434\u0430\u0440\u043A\u0430...').catch(() => { });
 });
 
-// Successful Payment Handler
 bot.on('successful_payment', async (ctx) => {
     const payment = ctx.message.successful_payment;
     const userId = ctx.from.id;
-    const amount = payment.total_amount; // For Stars, this is the amount
-    const currency = payment.currency; // 'XTR'
+    const amount = payment.total_amount;
+    const currency = payment.currency;
 
     const txData = {
         id: payment.provider_payment_charge_id,
@@ -529,27 +309,20 @@ bot.on('successful_payment', async (ctx) => {
         type: 'deposit'
     };
 
-    if (logTransaction(txData)) {
-        // Update persistent balance
-        const newBalance = updateBalance(userId, amount);
+    if (await logTransaction(txData)) {
+        const newBalance = await updateBalance(userId, amount);
+        await ctx.reply(`\u2705 \u041E\u043F\u043B\u0430\u0442\u0430 \u043F\u0440\u043E\u0448\u043B\u0430 \u0443\u0441\u043F\u0435\u0448\u043D\u043E! \u041F\u043E\u043B\u0443\u0447\u0435\u043D\u043E ${amount} \u0437\u0432\u0435\u0437\u0434. \u0411\u0430\u043B\u0430\u043D\u0441: ${newBalance}`);
 
-        // Notify User
-        await ctx.reply(`✅ Оплата прошла успешно! Получено ${amount} звезд. Баланс: ${newBalance}`);
-
-        // Notify Admin
         if (ADMIN_ID) {
-            bot.telegram.sendMessage(ADMIN_ID, `💰 Новое пополнение!\nUser: ${ctx.from.first_name} (@${ctx.from.username})\nAmount: ${amount} Stars`).catch(e => console.error('Admin notify failed', e));
+            bot.telegram.sendMessage(ADMIN_ID, `\u{1F4B0} \u041D\u043E\u0432\u043E\u0435 \u043F\u043E\u043F\u043E\u043B\u043D\u0435\u043D\u0438\u0435!\nUser: ${ctx.from.first_name} (@${ctx.from.username})\nAmount: ${amount} Stars`).catch(e => console.error('Admin notify failed', e));
         }
     }
 });
 
-// --- Action Handlers ---
 bot.on('inline_query', async (ctx) => {
     const userId = ctx.from.id;
     const refParam = `ref${userId}`;
     const botUserName = ctx.botInfo.username;
-
-    // Use specific image "zaberi.png" which we verified exists in public/
     const photoUrl = `${CASINO_URL}/zaberi.png`;
 
     await ctx.answerInlineQuery([{
@@ -557,11 +330,11 @@ bot.on('inline_query', async (ctx) => {
         id: 'referral_invite',
         photo_url: photoUrl,
         thumb_url: photoUrl,
-        title: 'ЗАБЕРИ ЗВЕЗДЫ ⭐️',
-        caption: '⭐️ Забирай бесплатные звёзды со мной в GiftSlot.\n\nНачни уже зарабатывать 👇',
+        title: '\u0417\u0410\u0411\u0415\u0420\u0418 \u0417\u0412\u0415\u0417\u0414\u042B \u2B50\uFE0F',
+        caption: '\u2B50 \u0417\u0430\u0431\u0438\u0440\u0430\u0439 \u0431\u0435\u0441\u043F\u043B\u0430\u0442\u043D\u044B\u0435 \u0437\u0432\u0451\u0437\u0434\u044B \u0441\u043E \u043C\u043D\u043E\u0439 \u0432 GiftSlot.\n\n\u041D\u0430\u0447\u043D\u0438 \u0443\u0436\u0435 \u0437\u0430\u0440\u0430\u0431\u0430\u0442\u044B\u0432\u0430\u0442\u044C \u{1F447}',
         reply_markup: {
             inline_keyboard: [[
-                { text: 'Получить 🎁', url: `https://t.me/${botUserName}?start=${refParam}` }
+                { text: '\u041F\u043E\u043B\u0443\u0447\u0438\u0442\u044C \u{1F381}', url: `https://t.me/${botUserName}?start=${refParam}` }
             ]]
         }
     }], { cache_time: 0, is_personal: true });
@@ -571,50 +344,38 @@ bot.action(/^approve_(\d+)_(\d+)$/, async (ctx) => {
     const userId = parseInt(ctx.match[1]);
     const amount = parseInt(ctx.match[2]);
 
-    // Since we already deducted the balance, we just acknowledge.
-    // Optionally we can mark transaction as completed in DB if we tracked it there.
-
-    await ctx.editMessageText(`✅ Вывод одобрен\nUser ID: ${userId}\nAmount: ${amount} Stars\nStatus: Completed`);
+    await ctx.editMessageText(`\u2705 \u0412\u044B\u0432\u043E\u0434 \u043E\u0434\u043E\u0431\u0440\u0435\u043D\nUser ID: ${userId}\nAmount: ${amount} Stars\nStatus: Completed`);
     await ctx.answerCbQuery('Withdrawal confirmed');
-
-    // Notify user
-    bot.telegram.sendMessage(userId, `✅ Ваш вывод ${amount} звезд одобрен! Они скоро поступят на ваш счет.`).catch(() => { });
+    bot.telegram.sendMessage(userId, `\u2705 \u0412\u0430\u0448 \u0432\u044B\u0432\u043E\u0434 ${amount} \u0437\u0432\u0435\u0437\u0434 \u043E\u0434\u043E\u0431\u0440\u0435\u043D! \u041E\u043D\u0438 \u0441\u043A\u043E\u0440\u043E \u043F\u043E\u0441\u0442\u0443\u043F\u044F\u0442 \u043D\u0430 \u0432\u0430\u0448 \u0441\u0447\u0451\u0442.`).catch(() => { });
 });
 
 bot.action(/^decline_(\d+)_(\d+)$/, async (ctx) => {
     const userId = parseInt(ctx.match[1]);
     const amount = parseInt(ctx.match[2]);
 
-    // Refund the user
-    updateBalance(userId, amount);
-
-    await ctx.editMessageText(`❌ Вывод отклонен\nUser ID: ${userId}\nAmount: ${amount} Stars\nStatus: Refunded`);
+    await updateBalance(userId, amount);
+    await ctx.editMessageText(`\u274C \u0412\u044B\u0432\u043E\u0434 \u043E\u0442\u043A\u043B\u043E\u043D\u0435\u043D\nUser ID: ${userId}\nAmount: ${amount} Stars\nStatus: Refunded`);
     await ctx.answerCbQuery('Withdrawal declined');
-
-    // Notify user
-    bot.telegram.sendMessage(userId, `❌ Ваш вывод ${amount} звезд был отклонен. Средства возвращены на баланс.`).catch(() => { });
+    bot.telegram.sendMessage(userId, `\u274C \u0412\u0430\u0448 \u0432\u044B\u0432\u043E\u0434 ${amount} \u0437\u0432\u0435\u0437\u0434 \u0431\u044B\u043B \u043E\u0442\u043A\u043B\u043E\u043D\u0435\u043D. \u0421\u0440\u0435\u0434\u0441\u0442\u0432\u0430 \u0432\u043E\u0437\u0432\u0440\u0430\u0449\u0435\u043D\u044B \u043D\u0430 \u0431\u0430\u043B\u0430\u043D\u0441.`).catch(() => { });
 });
 
-// --- API Endpoints for WebApp ---
+// --- API Endpoints ---
 app.post('/api/withdraw', async (req, res) => {
     const { userId, amount, username } = req.body;
 
     if (!userId || !amount || amount < 500) {
-        return res.status(400).json({ error: 'Неверный запрос. Минимальный вывод 500 звезд.' });
+        return res.status(400).json({ error: '\u041D\u0435\u0432\u0435\u0440\u043D\u044B\u0439 \u0437\u0430\u043F\u0440\u043E\u0441. \u041C\u0438\u043D\u0438\u043C\u0430\u043B\u044C\u043D\u044B\u0439 \u0432\u044B\u0432\u043E\u0434 500 \u0437\u0432\u0435\u0437\u0434.' });
     }
 
-    const balances = getBalances();
-    const currentBalance = balances[userId] || 0;
+    const currentBalance = await getBalance(userId);
 
     if (currentBalance < amount) {
-        return res.status(400).json({ error: 'Недостаточно средств' });
+        return res.status(400).json({ error: '\u041D\u0435\u0434\u043E\u0441\u0442\u0430\u0442\u043E\u0447\u043D\u043E \u0441\u0440\u0435\u0434\u0441\u0442\u0432' });
     }
 
-    // Deduct immediately
-    const newBalance = updateBalance(userId, -amount);
+    const newBalance = await updateBalance(userId, -amount);
 
-    // Log withdrawal request
-    logTransaction({
+    await logTransaction({
         id: `withdraw_${userId}_${Date.now()}`,
         userId: userId,
         username: username,
@@ -623,17 +384,16 @@ app.post('/api/withdraw', async (req, res) => {
         status: 'pending'
     });
 
-    // Send Request to Admin
     try {
         if (ADMIN_ID) {
             await bot.telegram.sendMessage(ADMIN_ID,
-                `💸 Запрос на вывод!\nUser: ${username} (ID: ${userId})\nAmount: ${amount} Stars\nBalance left: ${newBalance}`,
+                `\u{1F4B8} \u0417\u0430\u043F\u0440\u043E\u0441 \u043D\u0430 \u0432\u044B\u0432\u043E\u0434!\nUser: ${username} (ID: ${userId})\nAmount: ${amount} Stars\nBalance left: ${newBalance}`,
                 {
                     reply_markup: {
                         inline_keyboard: [
                             [
-                                { text: '✅ Одобрить', callback_data: `approve_${userId}_${amount}` },
-                                { text: '❌ Отклонить', callback_data: `decline_${userId}_${amount}` }
+                                { text: '\u2705 \u041E\u0434\u043E\u0431\u0440\u0438\u0442\u044C', callback_data: `approve_${userId}_${amount}` },
+                                { text: '\u274C \u041E\u0442\u043A\u043B\u043E\u043D\u0438\u0442\u044C', callback_data: `decline_${userId}_${amount}` }
                             ]
                         ]
                     }
@@ -643,37 +403,28 @@ app.post('/api/withdraw', async (req, res) => {
         res.json({ success: true, newBalance });
     } catch (e) {
         console.error('Failed to notify admin:', e);
-        // Refund on error
-        updateBalance(userId, amount);
+        await updateBalance(userId, amount);
         res.status(500).json({ error: 'Internal Server Error' });
     }
 });
 
-app.get('/api/balance/:userId', (req, res) => {
+app.get('/api/balance/:userId', async (req, res) => {
     const userId = parseInt(req.params.userId);
-    const balances = getBalances();
-    const balance = balances[userId] || 0;
+    const balance = await getBalance(userId);
     res.json({ stars: balance });
 });
 
-// --- Referral Stats Endpoint ---
-app.get('/api/referrals/:userId', (req, res) => {
+app.get('/api/referrals/:userId', async (req, res) => {
     const userId = req.params.userId;
-    const referrals = getReferrals();
-    const referredUsers = referrals[`count_${userId}`] || [];
-    const count = referredUsers.length;
-    const earned = count * 2; // 2 stars per referral
-    res.json({ count, earned });
+    const stats = await getReferralStats(userId);
+    res.json(stats);
 });
 
-// --- Roulette Claim Endpoint ---
-// --- Roulette Status Endpoint ---
-app.get('/api/roulette/status/:userId', (req, res) => {
+app.get('/api/roulette/status/:userId', async (req, res) => {
     const userId = req.params.userId;
-    const rouletteData = getRouletteData();
-    const lastSpin = rouletteData[userId] || 0;
+    const lastSpin = await getRouletteLastSpin(userId);
     const now = Date.now();
-    const cooldownMs = 5 * 60 * 60 * 1000; // 5 hours
+    const cooldownMs = 5 * 60 * 60 * 1000;
 
     let canSpin = true;
     let nextSpinTime = 0;
@@ -686,7 +437,7 @@ app.get('/api/roulette/status/:userId', (req, res) => {
     res.json({ canSpin, nextSpinTime });
 });
 
-app.post('/api/roulette/claim', (req, res) => {
+app.post('/api/roulette/claim', async (req, res) => {
     let { userId, amount } = req.body;
     userId = parseInt(userId);
 
@@ -694,42 +445,35 @@ app.post('/api/roulette/claim', (req, res) => {
         return res.status(400).json({ error: 'Invalid params' });
     }
 
-    // Only allow valid roulette prizes
     const validPrizes = [1, 1.5, 2];
     if (!validPrizes.includes(amount)) {
         return res.status(400).json({ error: 'Invalid prize amount' });
     }
 
-    // Check cooldown
-    const rouletteData = getRouletteData();
-    const lastSpin = rouletteData[userId] || 0;
+    const lastSpin = await getRouletteLastSpin(userId);
     const now = Date.now();
-    const cooldownMs = 5 * 60 * 60 * 1000; // 5 hours
+    const cooldownMs = 5 * 60 * 60 * 1000;
 
     if (now - lastSpin < cooldownMs) {
         const remainingMs = cooldownMs - (now - lastSpin);
         return res.status(400).json({ error: 'Cooldown active', remainingMs });
     }
 
-    // Update cooldown
-    rouletteData[userId] = now;
-    saveRouletteData(rouletteData);
-
-    const newBalance = updateBalance(userId, amount);
+    await setRouletteLastSpin(userId, now);
+    const newBalance = await updateBalance(userId, amount);
     res.json({ success: true, newBalance, prize: amount });
 });
 
-app.post('/api/game/transaction', (req, res) => {
+app.post('/api/game/transaction', async (req, res) => {
     const { userId, amount } = req.body;
     if (!userId || typeof amount !== 'number') {
         return res.status(400).json({ error: 'Invalid params' });
     }
-    // amount can be negative (bet) or positive (win)
-    const newBalance = updateBalance(userId, amount);
+    const newBalance = await updateBalance(userId, amount);
     res.json({ balance: newBalance });
 });
 
-app.post('/api/promocode/activate', (req, res) => {
+app.post('/api/promocode/activate', async (req, res) => {
     const { userId, code } = req.body;
 
     if (!userId || !code) {
@@ -737,32 +481,25 @@ app.post('/api/promocode/activate', (req, res) => {
     }
 
     const upperCode = code.toUpperCase().trim();
-    const promos = getPromocodes();
-    const promo = promos[upperCode];
+    const promo = await getPromo(upperCode);
 
     if (!promo || !promo.reward) {
-        return res.status(400).json({ success: false, error: 'Неверный промокод' });
+        return res.status(400).json({ success: false, error: '\u041D\u0435\u0432\u0435\u0440\u043D\u044B\u0439 \u043F\u0440\u043E\u043C\u043E\u043A\u043E\u0434' });
     }
 
-    if (promo.usedBy.includes(userId)) {
-        return res.status(400).json({ success: false, error: 'Вы уже использовали этот промокод' });
+    if (promo.used_by.includes(userId)) {
+        return res.status(400).json({ success: false, error: '\u0412\u044B \u0443\u0436\u0435 \u0438\u0441\u043F\u043E\u043B\u044C\u0437\u043E\u0432\u0430\u043B\u0438 \u044D\u0442\u043E\u0442 \u043F\u0440\u043E\u043C\u043E\u043A\u043E\u0434' });
     }
 
-    // Check for global usage limit
-    if (promo.maxUsages && promo.usedBy.length >= promo.maxUsages) {
-        return res.status(400).json({ success: false, error: 'Этот промокод больше не действителен (лимит исчерпан)' });
+    if (promo.max_usages > 0 && promo.used_by.length >= promo.max_usages) {
+        return res.status(400).json({ success: false, error: '\u042D\u0442\u043E\u0442 \u043F\u0440\u043E\u043C\u043E\u043A\u043E\u0434 \u0431\u043E\u043B\u044C\u0448\u0435 \u043D\u0435 \u0434\u0435\u0439\u0441\u0442\u0432\u0438\u0442\u0435\u043B\u0435\u043D (\u043B\u0438\u043C\u0438\u0442 \u0438\u0441\u0447\u0435\u0440\u043F\u0430\u043D)' });
     }
 
-    // Apply reward
-    const reward = promo.reward;
-    const newBalance = updateBalance(userId, reward);
+    const reward = Number(promo.reward);
+    const newBalance = await updateBalance(userId, reward);
+    await usePromo(upperCode, userId);
 
-    // Mark as used
-    promo.usedBy.push(userId);
-    savePromocodes(promos);
-
-    // Log transaction
-    logTransaction({
+    await logTransaction({
         id: `promo_${upperCode}_${userId}_${Date.now()}`,
         userId: userId,
         amount: reward,
@@ -784,9 +521,9 @@ app.post('/api/create-invoice', async (req, res) => {
         const title = 'Gift Stars';
         const description = `Gift ${amount} Stars`;
         const payload = `deposit_${userId}_${Date.now()}`;
-        const providerToken = ""; // Empty for Telegram Stars
+        const providerToken = "";
         const currency = "XTR";
-        const prices = [{ label: "Stars", amount: Math.floor(amount) }]; // Amount in minimal units? For Stars, amount 1 = 1 Star.
+        const prices = [{ label: "Stars", amount: Math.floor(amount) }];
 
         const link = await bot.telegram.createInvoiceLink({
             title,
@@ -804,7 +541,6 @@ app.post('/api/create-invoice', async (req, res) => {
     }
 });
 
-// --- Prepare Share Message for Referral ---
 app.post('/api/prepare-share', async (req, res) => {
     const { userId } = req.body;
 
@@ -822,16 +558,15 @@ app.post('/api/prepare-share', async (req, res) => {
             id: `referral_${userId}_${Date.now()}`,
             photo_url: photoUrl,
             thumbnail_url: photoUrl,
-            title: 'ЗАБЕРИ ЗВЕЗДЫ ⭐️',
-            caption: '⭐️ Забирай бесплатные звёзды со мной в GiftSlot.\n\nНачни уже зарабатывать 👇',
+            title: '\u0417\u0410\u0411\u0415\u0420\u0418 \u0417\u0412\u0415\u0417\u0414\u042B \u2B50\uFE0F',
+            caption: '\u2B50 \u0417\u0430\u0431\u0438\u0440\u0430\u0439 \u0431\u0435\u0441\u043F\u043B\u0430\u0442\u043D\u044B\u0435 \u0437\u0432\u0451\u0437\u0434\u044B \u0441\u043E \u043C\u043D\u043E\u0439 \u0432 GiftSlot.\n\n\u041D\u0430\u0447\u043D\u0438 \u0443\u0436\u0435 \u0437\u0430\u0440\u0430\u0431\u0430\u0442\u044B\u0432\u0430\u0442\u044C \u{1F447}',
             reply_markup: {
                 inline_keyboard: [[
-                    { text: 'Получить 🎁', url: `https://t.me/${botUserName}?start=${refParam}` }
+                    { text: '\u041F\u043E\u043B\u0443\u0447\u0438\u0442\u044C \u{1F381}', url: `https://t.me/${botUserName}?start=${refParam}` }
                 ]]
             }
         };
 
-        // Use Bot API 8.0+ savePreparedInlineMessage
         const prepared = await bot.telegram.callApi('savePreparedInlineMessage', {
             user_id: userId,
             result: result,
@@ -848,13 +583,12 @@ app.post('/api/prepare-share', async (req, res) => {
     }
 });
 
-// --- Test Endpoint ---
-app.post('/api/test/add-balance', (req, res) => {
+app.post('/api/test/add-balance', async (req, res) => {
     const { userId, amount } = req.body;
     if (!userId || !amount) return res.status(400).json({ error: 'Invalid params' });
 
-    const newBalance = updateBalance(userId, amount);
-    logTransaction({
+    const newBalance = await updateBalance(userId, amount);
+    await logTransaction({
         id: `test_deposit_${userId}_${Date.now()}`,
         userId,
         amount,
@@ -864,63 +598,47 @@ app.post('/api/test/add-balance', (req, res) => {
     res.json({ success: true, newBalance });
 });
 
-app.post('/api/referral/activate', (req, res) => {
+app.post('/api/referral/activate', async (req, res) => {
     const { userId, referrerId } = req.body;
 
-    // Basic validation
     if (!userId || !referrerId) {
         return res.status(400).json({ success: false, error: 'Missing params' });
     }
 
-    // Prevent self-referral
     if (String(userId) === String(referrerId)) {
         return res.status(400).json({ success: false, error: 'Self referral' });
     }
 
-    // Remove 'ref' prefix if present
     const cleanReferrerId = String(referrerId).replace('ref', '');
 
-    // Validate referrer ID is a number/valid ID
     if (!/^\d+$/.test(cleanReferrerId)) {
         return res.status(400).json({ success: false, error: 'Invalid referrer ID' });
     }
 
-    const referrals = getReferrals();
-
-    // Check if user is already referred by someone
-    if (referrals[userId]) {
-        return res.status(400).json({ success: false, error: 'Already referred', referrer: referrals[userId] });
+    const existing = await getReferrer(userId);
+    if (existing) {
+        return res.status(400).json({ success: false, error: 'Already referred', referrer: existing });
     }
 
-    // Check if referrer exists (optional, but good practice to ensure they are a real user? 
-    // For now we assume valid if ID is valid format, to avoid "User not found" if referrer hasn't played yet)
+    await setReferral(userId, parseInt(cleanReferrerId));
 
-    // Record referral
-    referrals[userId] = cleanReferrerId;
-    saveReferrals(referrals);
+    const rewardAmount = 2;
+    const newReferrerBalance = await updateBalance(parseInt(cleanReferrerId), rewardAmount);
 
-    // Reward Referrer
-    const rewardAmount = 2; // 2 Stars as requested
-    const newReferrerBalance = updateBalance(cleanReferrerId, rewardAmount);
-
-    // Log transaction for referrer
-    logTransaction({
+    await logTransaction({
         id: `ref_reward_${cleanReferrerId}_${userId}_${Date.now()}`,
-        userId: cleanReferrerId,
+        userId: parseInt(cleanReferrerId),
         amount: rewardAmount,
         type: 'referral_reward',
         sourceUser: userId
     });
 
-    // Notify Referrer (if possible)
-    bot.telegram.sendMessage(cleanReferrerId, `🎉 Кто-то перешел по вашей ссылке! Вам начислено ${rewardAmount} звезды.`).catch(() => { });
+    bot.telegram.sendMessage(cleanReferrerId, `\u{1F389} \u041A\u0442\u043E-\u0442\u043E \u043F\u0435\u0440\u0435\u0448\u0435\u043B \u043F\u043E \u0432\u0430\u0448\u0435\u0439 \u0441\u0441\u044B\u043B\u043A\u0435! \u0412\u0430\u043C \u043D\u0430\u0447\u0438\u0441\u043B\u0435\u043D\u043E ${rewardAmount} \u0437\u0432\u0435\u0437\u0434\u044B.`).catch(() => { });
 
     console.log(`Referral activated: ${userId} referred by ${cleanReferrerId}`);
     res.json({ success: true, reward: rewardAmount });
 });
 
-
-// --- Debug Endpoint ---
 app.get('/api/debug/bot-info', async (req, res) => {
     try {
         const me = await bot.telegram.getMe();
@@ -950,75 +668,55 @@ async function retryApi(fn, retries = 5, delay = 2000) {
 }
 
 async function checkDailyNotifications() {
-    const balances = getBalances();
-    const rouletteData = getRouletteData();
-    const notifications = getNotifications();
+    const balances = await getAllBalances();
+    const rouletteData = await getAllRoulette();
+    const notifications = await getAllNotifications();
     const now = Date.now();
-    const COOLDOWN = 5 * 60 * 60 * 1000; // 5 hours
+    const COOLDOWN = 5 * 60 * 60 * 1000;
 
     for (const userId of Object.keys(balances)) {
         const lastSpin = rouletteData[userId] || 0;
         const lastNotification = notifications[userId] || 0;
 
-        // Condition: 
-        // 1. User is eligible (time since last spin > 5h)
-        // 2. We haven't notified them *after* they became eligible
-        //    (i.e., lastNotification should be older than the time they became eligible)
-        //    Actually simpler: track last notification time. If it's been > 5h since last notification AND they are eligible, notify.
-        
-        // Wait, if they spin at 12:00. Eligible at 17:00.
-        // We notify at 17:01.
-        // We shouldn't notify again until they spin and become eligible again.
-        // But if they ignore the notification, should we remind them? Usually no, or maybe once a day.
-        // Let's stick to: notify ONCE when they become eligible.
-        
         const nextSpinTime = lastSpin + COOLDOWN;
         const isEligible = now >= nextSpinTime;
-        
-        // If eligible, and we haven't notified them *since* the eligibility time started
-        // Eligibility started at `nextSpinTime`.
-        // So if lastNotification < nextSpinTime, we haven't notified them for THIS cycle.
-        
+
         if (isEligible && lastNotification < nextSpinTime) {
             try {
-                await bot.telegram.sendMessage(userId, 
-                    '🎰 *Ежедневная Рулетка Доступна!* 🎰\n\n' +
+                await bot.telegram.sendMessage(userId,
+                    '\u{1F3B0} *Ежедневная Рулетка Доступна!* \u{1F3B0}\n\n' +
                     'Прошло 5 часов! Самое время испытать удачу и забрать свой бонус.\n\n' +
-                    '👇 Жми кнопку ниже!',
+                    '\u{1F447} Жми кнопку ниже!',
                     {
                         parse_mode: 'Markdown',
                         reply_markup: {
                             inline_keyboard: [
-                                [{ text: '🎰 Крутить Рулетку', web_app: { url: CASINO_URL } }]
+                                [{ text: '\u{1F3B0} Крутить Рулетку', web_app: { url: CASINO_URL } }]
                             ]
                         }
                     }
                 );
-                
-                // Update notification time
-                notifications[userId] = now;
-                saveNotifications(notifications);
+
+                await setNotificationTime(parseInt(userId), now);
                 console.log(`Notification sent to ${userId}`);
             } catch (e) {
-                // If user blocked bot, ignore
-                // console.error(`Failed to notify ${userId}:`, e.message);
                 if (e.description && e.description.includes('blocked')) {
-                    // Mark as notified so we don't retry forever
-                    notifications[userId] = now; 
-                    saveNotifications(notifications);
+                    await setNotificationTime(parseInt(userId), now);
                 }
             }
         }
     }
 }
 
-// Check every 10 minutes
 setInterval(checkDailyNotifications, 10 * 60 * 1000);
 
-// --- Start Servers ---
+// --- Start ---
 const startBot = async () => {
     try {
-        // Fetch Bot Info first to get Username (with retry)
+        // Init database
+        await initDB();
+        await seedPromos();
+
         try {
             const me = await retryApi(() => bot.telegram.getMe());
             BOT_USERNAME = me.username;
@@ -1027,7 +725,6 @@ const startBot = async () => {
             console.error('Failed to fetch bot info after retries:', e);
         }
 
-        // Use Webhook if in production and CASINO_URL is available (and valid)
         if (process.env.NODE_ENV === 'production' && CASINO_URL && CASINO_URL.startsWith('https')) {
             const webhookSecret = require('crypto').createHash('sha256').update(token).digest('hex').slice(0, 32);
             const webhookPath = `/webhook/${webhookSecret}`;
@@ -1035,29 +732,21 @@ const startBot = async () => {
 
             console.log(`Using Webhook: ${webhookUrl}`);
 
-            // Set webhook with retry
             await retryApi(() => bot.telegram.setWebhook(webhookUrl));
-
-            // Handle updates via Express
             app.use(bot.webhookCallback(webhookPath));
-
             console.log('Bot webhook configured successfully.');
         } else {
-            // Use Polling for local development
             console.log('Using Polling...');
-            // Clear webhook just in case it was set previously
             try {
                 await bot.telegram.deleteWebhook();
                 await bot.launch();
                 console.log('Bot polling started.');
             } catch (err) {
-                console.warn('Bot polling failed to start (likely due to invalid token). API will still work.');
-                console.warn(err.message);
+                console.warn('Bot polling failed to start:', err.message);
             }
         }
     } catch (e) {
         console.error('Bot setup failed:', e);
-        // Do not exit, keep server running
     }
 };
 
@@ -1067,6 +756,5 @@ app.listen(PORT, () => {
     console.log(`API Server running on port ${PORT}`);
 });
 
-// Graceful stop
 process.once('SIGINT', () => bot.stop('SIGINT'));
 process.once('SIGTERM', () => bot.stop('SIGTERM'));
