@@ -26,14 +26,15 @@ export default function DepositModal({ isOpen, onClose, onDeposit, onWithdraw, o
   const activeCurrency = 'STARS';
   const [isSuccess, setIsSuccess] = useState(false);
   const [successMessage, setSuccessMessage] = useState('');
+  const [promoError, setPromoError] = useState('');
 
-  // Reset state when opening
   React.useEffect(() => {
     if (isOpen) {
         setAmount('');
         setPromoCode('');
         setIsSuccess(false);
         setActiveTab('deposit');
+        setPromoError('');
     }
   }, [isOpen]);
 
@@ -69,6 +70,7 @@ export default function DepositModal({ isOpen, onClose, onDeposit, onWithdraw, o
 
   const handlePromo = async () => {
       if (!onActivatePromo || !promoCode) return;
+      setPromoError('');
       const res = await onActivatePromo(promoCode);
       if (res.success) {
           setSuccessMessage(res.message || 'Промокод активирован!');
@@ -79,14 +81,8 @@ export default function DepositModal({ isOpen, onClose, onDeposit, onWithdraw, o
               setPromoCode('');
           }, 1500);
       } else {
-          // Quick error feedback
-          const original = successMessage;
-          setSuccessMessage(res.message || 'Ошибка');
-          // We'll use the success overlay but maybe we should style it red?
-          // For now, let's just use alert to keep it simple or show in success overlay.
-          // Let's reuse success overlay but it's green. That's confusing.
-          // Let's just use alert for now.
-          alert(res.message);
+          setPromoError(res.message || 'Ошибка');
+          setTimeout(() => setPromoError(''), 3000);
       }
   };
 
@@ -294,17 +290,21 @@ export default function DepositModal({ isOpen, onClose, onDeposit, onWithdraw, o
                            </div>
                        </div>
 
-                       <button
-                           onClick={handlePromo}
-                           disabled={!promoCode}
-                           className={`w-full py-4 rounded-xl font-bold text-lg shadow-lg transition-all ${
-                               !promoCode
-                               ? 'bg-gray-700 text-gray-500 cursor-not-allowed'
-                               : 'bg-yellow-500 hover:bg-yellow-600 text-white shadow-yellow-500/25'
-                           }`}
-                       >
-                           Активировать
-                       </button>
+                        <button
+                            onClick={handlePromo}
+                            disabled={!promoCode}
+                            className={`w-full py-4 rounded-xl font-bold text-lg shadow-lg transition-all ${
+                                !promoCode
+                                ? 'bg-gray-700 text-gray-500 cursor-not-allowed'
+                                : 'bg-yellow-500 hover:bg-yellow-600 text-white shadow-yellow-500/25 active:scale-95'
+                            }`}
+                        >
+                            Активировать
+                        </button>
+
+                        {promoError && (
+                            <div className="text-red-400 text-sm text-center mt-2 font-medium">{promoError}</div>
+                        )}
                    </div>
                 </>
             )}
