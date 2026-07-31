@@ -282,7 +282,7 @@ bot.start(async (ctx) => {
         reply_markup: {
             inline_keyboard: [
                 [{ text: '\u0418\u0433\u0440\u0430\u0442\u044C \u0432 GiftSlot', web_app: { url: CASINO_URL } }],
-                [{ text: '\u041D\u0430\u0448 \u043A\u0430\u043D\u0430\u043B', url: 'https://t.me/giftslotv' }]
+                [{ text: '\u041D\u0430\u0448 \u043A\u0430\u043D\u0430\u043B', url: 'https://t.me/giftslote' }]
             ]
         }
     });
