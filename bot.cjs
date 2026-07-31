@@ -6,7 +6,7 @@ const { Telegraf } = require('telegraf');
 
 // --- Configuration Loading ---
 let token = process.env.BOT_TOKEN || process.env.TELEGRAM_BOT_TOKEN || '';
-let CASINO_URL = process.env.CASINO_URL || '';
+let CASINO_URL = (process.env.CASINO_URL || '').replace(/\/+$/, '');
 let ADMIN_ID = '7119839001';
 let BOT_USERNAME = '';
 
