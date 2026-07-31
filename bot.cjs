@@ -1029,7 +1029,8 @@ const startBot = async () => {
 
         // Use Webhook if in production and CASINO_URL is available (and valid)
         if (process.env.NODE_ENV === 'production' && CASINO_URL && CASINO_URL.startsWith('https')) {
-            const webhookPath = `/telegraf/${token}`;
+            const webhookSecret = require('crypto').createHash('sha256').update(token).digest('hex').slice(0, 32);
+            const webhookPath = `/webhook/${webhookSecret}`;
             const webhookUrl = `${CASINO_URL}${webhookPath}`;
 
             console.log(`Using Webhook: ${webhookUrl}`);
