@@ -27,8 +27,7 @@ COPY --from=builder /app/dist ./dist
 
 # Copy backend files
 COPY bot.cjs ./
-# If you have other backend files/folders, copy them here
-# COPY server ./server 
+COPY slotMath.cjs ./
 
 # Create data directory for persistence
 RUN mkdir -p data
