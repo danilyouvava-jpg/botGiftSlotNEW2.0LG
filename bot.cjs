@@ -191,7 +191,7 @@ async function usePromo(code, userId) {
 
 async function seedPromos() {
     // Remove old promos first
-    const oldCodes = ['GIFTUFC', 'GIFTSL', 'SUCHKA', 'MONKEY', 'FREE10', 'GAMEUP', 'SANTA', 'NWESISTEM', 'NEWSISTEM', 'BONUSSS', 'NEWSTART', 'CHINA', 'LOL', 'DGVDJA341KV400-', 'PGBDF60', 'GDFYLXB30', 'MFDSCV30', 'FGBRCAJKV30', 'VDFNNRFDS30', 'SKHNDB30', 'MGKDFC30', 'NNAKFLAS200', 'SAFVADFASS100', 'X2KMVDASDD200F', 'NHFMVLAJFG300', 'FKFMMFKLLDJVKL1000', 'DNVKDLAMFMVKQ1000S', 'HFLVORMLS20', 'GANFKVIK50', 'FVMAKSS60', 'SET', 'COINS', 'NEWHOME', 'STIKER'];
+    const oldCodes = ['GIFTUFC', 'GIFTSL', 'SUCHKA', 'MONKEY', 'FREE10', 'GAMEUP', 'SANTA', 'NWESISTEM', 'NEWSISTEM', 'BONUSSS', 'NEWSTART', 'CHINA', 'LOL', 'DGVDJA341KV400-', 'PGBDF60', 'GDFYLXB30', 'MFDSCV30', 'FGBRCAJKV30', 'VDFNNRFDS30', 'SKHNDB30', 'MGKDFC30', 'NNAKFLAS200', 'SAFVADFASS100', 'X2KMVDASDD200F', 'NHFMVLAJFG300', 'FKFMMFKLLDJVKL1000', 'DNVKDLAMFMVKQ1000S', 'HFLVORMLS20', 'GANFKVIK50', 'FVMAKSS60', 'SET', 'COINS', 'NEWHOME', 'STIKERS'];
     for (const code of oldCodes) {
         await pool.query('DELETE FROM promocodes WHERE code = $1', [code]);
     }
@@ -199,7 +199,7 @@ async function seedPromos() {
     // Insert current promos
     const promos = [
         { code: 'NEWHOME', reward: 20, maxUsages: 0 },
-        { code: 'STIKER', reward: 15, maxUsages: 0 },
+        { code: 'STIKERS', reward: 15, maxUsages: 0 },
     ];
 
     for (const p of promos) {
