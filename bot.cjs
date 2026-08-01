@@ -452,8 +452,13 @@ bot.start(async (ctx) => {
     }
 
     const startPhotoUrl = `${CASINO_URL}/start.png`;
+    const userLang = (ctx.from.language_code || 'ru').toLowerCase();
+    const isEn = userLang.startsWith('en');
+    const startCaption = isEn
+        ? 'Test your luck in GiftSlot\n\u{1F381} Enter promo codes for stars and earn stars every day'
+        : '\u0418\u0441\u043F\u044B\u0442\u0430\u0439 \u0443\u0434\u0430\u0447\u0443 \u0432 GiftSlot\n\u{1F381} \u0412\u0432\u043E\u0434\u0438 \u043F\u0440\u043E\u043C\u043E\u043A\u043E\u0434\u044B \u043D\u0430 \u0437\u0432\u0435\u0437\u0434\u044B \u0438 \u0437\u0430\u0440\u0430\u0431\u0430\u0442\u044B\u0432\u0430\u0439 \u0437\u0432\u0435\u0437\u0434\u044B \u043A\u0430\u0436\u0434\u044B\u0439 \u0434\u0435\u043D\u044C';
     ctx.replyWithPhoto(startPhotoUrl, {
-        caption: '\u0418\u0441\u043F\u044B\u0442\u0430\u0439 \u0443\u0434\u0430\u0447\u0443 \u0432 GiftSlot\n\u{1F381} \u0412\u0432\u043E\u0434\u0438 \u043F\u0440\u043E\u043C\u043E\u043A\u043E\u0434\u044B \u043D\u0430 \u0437\u0432\u0435\u0437\u0434\u044B \u0438 \u0437\u0430\u0440\u0430\u0431\u0430\u0442\u044B\u0432\u0430\u0439 \u0437\u0432\u0435\u0437\u0434\u044B \u043A\u0430\u0436\u0434\u044B\u0439 \u0434\u0435\u043D\u044C',
+        caption: startCaption,
         reply_markup: {
             inline_keyboard: [
                 [{ text: '\u0418\u0433\u0440\u0430\u0442\u044C \u0432 GiftSlot', web_app: { url: CASINO_URL } }],
