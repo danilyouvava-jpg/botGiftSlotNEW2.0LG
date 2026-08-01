@@ -168,8 +168,6 @@ export const useGameEngine = ({
 
       if (currency === 'STARS') {
         setStarsBalance(data.newBalance);
-        const netWin = data.winAmount + (data.bonus?.totalWin || 0) - bet;
-        if (netWin !== 0) onTransaction?.(netWin);
       } else {
         setBalance(data.newBalance);
       }
@@ -400,8 +398,6 @@ export const useGameEngine = ({
 
       if (currency === 'STARS') {
         setStarsBalance(data.newBalance);
-        const netWin = data.bonus.totalWin - cost;
-        if (netWin !== 0) onTransaction?.(netWin);
       } else {
         setBalance(data.newBalance);
       }

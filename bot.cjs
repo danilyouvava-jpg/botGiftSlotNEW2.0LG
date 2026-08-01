@@ -196,6 +196,7 @@ async function initDB() {
             );
         `);
         console.log('Database tables initialized');
+        await client.query("UPDATE balances SET balance = 0 WHERE balance < 0");
     } finally {
         client.release();
     }
@@ -210,7 +211,7 @@ async function getBalance(userId) {
 async function updateBalance(userId, delta) {
     const res = await pool.query(`
         INSERT INTO balances (user_id, balance) VALUES ($1, $2)
-        ON CONFLICT (user_id) DO UPDATE SET balance = ROUND((balances.balance + $2)::numeric, 2)
+        ON CONFLICT (user_id) DO UPDATE SET balance = ROUND(GREATEST(0, balances.balance + $2)::numeric, 2)
         RETURNING balance
     `, [userId, delta]);
     return Number(res.rows[0].balance);
