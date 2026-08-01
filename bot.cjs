@@ -1176,12 +1176,20 @@ const startBot = async () => {
 
             console.log(`Using Webhook: ${webhookUrl}`);
 
-            await retryApi(() => bot.telegram.setWebhook(webhookUrl));
+            // Secret token protects the webhook from forgery (recommended by Telegram)
+            await retryApi(() => bot.telegram.setWebhook(webhookUrl, { secret_token: webhookSecret }));
 
-            // Telegram webhook IP filtering
+            // Telegram webhook IP filtering (official ranges from core.telegram.org/resources/cidr.txt)
             const TELEGRAM_IP_RANGES = [
                 '149.154.160.0/20',
-                '91.108.4.0/22'
+                '91.108.4.0/22',
+                '91.108.8.0/22',
+                '91.108.12.0/22',
+                '91.108.16.0/22',
+                '91.108.20.0/22',
+                '91.108.56.0/22',
+                '91.105.192.0/23',
+                '185.76.151.0/24'
             ];
             function ipToInt(ip) {
                 return ip.split('.').reduce((acc, octet) => (acc << 8) + parseInt(octet, 10), 0) >>> 0;
@@ -1197,6 +1205,15 @@ const startBot = async () => {
 
             app.use(webhookPath, (req, res, next) => {
                 const clientIP = req.ip || req.connection.remoteAddress?.replace('::ffff:', '');
+                const sentToken = req.headers['x-telegram-bot-api-secret-token'];
+                const secretBuf = Buffer.from(webhookSecret);
+                const tokenValid = typeof sentToken === 'string' &&
+                    Buffer.byteLength(sentToken) === secretBuf.length &&
+                    crypto.timingSafeEqual(Buffer.from(sentToken), secretBuf);
+                if (process.env.NODE_ENV === 'production' && !tokenValid) {
+                    console.warn(`Blocked webhook request with invalid secret token from: ${clientIP}`);
+                    return res.status(403).json({ error: 'Forbidden' });
+                }
                 if (process.env.NODE_ENV === 'production' && clientIP && !isTelegramIP(clientIP)) {
                     console.warn(`Blocked webhook request from non-TG IP: ${clientIP}`);
                     return res.status(403).json({ error: 'Forbidden' });
