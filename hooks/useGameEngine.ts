@@ -111,6 +111,16 @@ export const useGameEngine = ({
     }, MIN_SPIN_TIME);
   }, [rows, cols]);
 
+  const syncBalanceFromServer = useCallback(async () => {
+    if (!userId) return;
+    try {
+      const resp = await fetch(`/api/balance/${userId}`, { headers: authHeaders() });
+      if (!resp.ok) return;
+      const data = await resp.json();
+      if (typeof data.stars === 'number') setStarsBalance(data.stars);
+    } catch { }
+  }, [userId, setStarsBalance]);
+
   const handleSpin = useCallback(async () => {
     if (isSpinningRef.current) return;
     if (!userId) return;
@@ -153,11 +163,7 @@ export const useGameEngine = ({
       if (!resp.ok) {
         const err = await resp.json().catch(() => ({}));
         console.error('Spin failed:', err);
-        if (currency === 'TON') {
-          setBalance(prev => Number((prev + bet).toFixed(2)));
-        } else {
-          setStarsBalance(prev => Number((prev + bet).toFixed(2)));
-        }
+        await syncBalanceFromServer();
         setGameState(GameState.IDLE);
         isSpinningRef.current = false;
         return;
@@ -186,15 +192,11 @@ export const useGameEngine = ({
       });
     } catch (e) {
       console.error('Spin request failed:', e);
-      if (currency === 'TON') {
-        setBalance(prev => Number((prev + bet).toFixed(2)));
-      } else {
-        setStarsBalance(prev => Number((prev + bet).toFixed(2)));
-      }
+      await syncBalanceFromServer();
       setGameState(GameState.IDLE);
       isSpinningRef.current = false;
     }
-  }, [userId, balance, starsBalance, bet, gameState, currency, isActive, isMuted, theme, rows, cols, stickyPlanes, setBalance, setStarsBalance, onTransaction, playReelAnimation]);
+  }, [userId, balance, starsBalance, bet, gameState, currency, isActive, isMuted, theme, rows, cols, stickyPlanes, setBalance, setStarsBalance, onTransaction, playReelAnimation, syncBalanceFromServer]);
 
   const handleObesianaLocks = (finalGrid: SymbolData[][]) => {
     if (theme !== 'obeziana') return;
@@ -387,8 +389,7 @@ export const useGameEngine = ({
       if (!resp.ok) {
         const err = await resp.json().catch(() => ({}));
         console.error('Buy bonus failed:', err);
-        if (currency === 'TON') setBalance(prev => Number((prev + cost).toFixed(2)));
-        else setStarsBalance(prev => Number((prev + cost).toFixed(2)));
+        await syncBalanceFromServer();
         setGameState(GameState.IDLE);
         isSpinningRef.current = false;
         return;
@@ -409,12 +410,11 @@ export const useGameEngine = ({
       });
     } catch (e) {
       console.error('Buy bonus request failed:', e);
-      if (currency === 'TON') setBalance(prev => Number((prev + cost).toFixed(2)));
-      else setStarsBalance(prev => Number((prev + cost).toFixed(2)));
+      await syncBalanceFromServer();
       setGameState(GameState.IDLE);
       isSpinningRef.current = false;
     }
-  }, [userId, balance, starsBalance, bet, gameState, currency, isActive, isMuted, theme, rows, cols, setBalance, setStarsBalance, onTransaction, playReelAnimation]);
+  }, [userId, balance, starsBalance, bet, gameState, currency, isActive, isMuted, theme, rows, cols, setBalance, setStarsBalance, onTransaction, playReelAnimation, syncBalanceFromServer]);
 
   return {
     grid, gameState, winData, bonusSpins, bonusTotal,

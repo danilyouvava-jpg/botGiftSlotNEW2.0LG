@@ -92,7 +92,14 @@ function verifyInitData(initData, botToken) {
         const secretKey = crypto.createHmac('sha256', 'WebAppData').update(botToken).digest();
         const computedHash = crypto.createHmac('sha256', secretKey).update(dataCheckString).digest('hex');
 
-        return computedHash === hash;
+        if (computedHash !== hash) return false;
+
+        const authDate = parseInt(urlParams.get('auth_date'), 10);
+        if (!authDate || isNaN(authDate)) return false;
+        const AUTH_MAX_AGE_MS = 24 * 60 * 60 * 1000;
+        if (Date.now() - authDate * 1000 > AUTH_MAX_AGE_MS) return false;
+
+        return true;
     } catch {
         return false;
     }
@@ -771,6 +778,9 @@ app.post('/api/game/buy-bonus', requireAuth, async (req, res) => {
 
     if (!userId || !bet || typeof bet !== 'number' || bet <= 0) {
         return res.status(400).json({ error: 'Invalid bet' });
+    }
+    if (bet > 500) {
+        return res.status(400).json({ error: 'Max bet is 500' });
     }
     const cost = Math.round(bet * 100);
     const validThemes = ['durov', 'flour', 'obeziana'];
