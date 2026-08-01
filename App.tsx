@@ -112,6 +112,15 @@ export default function App() {
                         if (d.stars !== undefined) setStarsBalance(d.stars);
                     })
                     .catch(e => console.error('Failed to fetch balance', e));
+
+                const startParam = w.Telegram.WebApp.initDataUnsafe?.start_param;
+                if (typeof startParam === 'string' && startParam.startsWith('ref') && startParam.length > 3) {
+                    fetch('/api/referral/activate', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json', ...authHeaders() },
+                        body: JSON.stringify({ userId: id, referrerId: startParam.replace('ref', '') })
+                    }).catch(e => console.error('Referral activate error', e));
+                }
             } else {
                 // DEV MODE: If no Telegram User, use Test ID but NO auto-stars
                 // const TEST_ID = 123456;

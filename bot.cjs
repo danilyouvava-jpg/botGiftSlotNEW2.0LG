@@ -416,21 +416,25 @@ bot.start(async (ctx) => {
     const startPayload = ctx.startPayload || '';
     const userId = ctx.from.id;
 
-    if (startPayload.startsWith('ref')) {
-        const referrerId = startPayload.replace('ref', '');
+    try {
+        if (startPayload.startsWith('ref')) {
+            const referrerId = startPayload.replace('ref', '');
 
-        if (referrerId && referrerId !== String(userId)) {
-            const existing = await getReferrer(userId);
+            if (referrerId && referrerId !== String(userId)) {
+                const existing = await getReferrer(userId);
 
-            if (!existing) {
-                await setReferral(userId, parseInt(referrerId));
-                const newBalance = await updateBalance(parseInt(referrerId), 2);
+                if (!existing) {
+                    await setReferral(userId, parseInt(referrerId));
+                    const newBalance = await updateBalance(parseInt(referrerId), 2);
 
-                bot.telegram.sendMessage(referrerId, `\u{1F389} \u041A\u0442\u043E-\u0442\u043E \u043F\u0435\u0440\u0435\u0448\u0435\u043B \u043F\u043E \u0432\u0430\u0448\u0435\u0439 \u0441\u0441\u044B\u043B\u043A\u0435! \u0412\u0430\u043C \u043D\u0430\u0447\u0438\u0441\u043B\u0435\u043D\u043E 2 \u0437\u0432\u0435\u0437\u0434\u044B. \u0411\u0430\u043B\u0430\u043D\u0441: ${newBalance}`).catch(() => { });
+                    bot.telegram.sendMessage(referrerId, `\u{1F389} \u041A\u0442\u043E-\u0442\u043E \u043F\u0435\u0440\u0435\u0448\u0435\u043B \u043F\u043E \u0432\u0430\u0448\u0435\u0439 \u0441\u0441\u044B\u043B\u043A\u0435! \u0412\u0430\u043C \u043D\u0430\u0447\u0438\u0441\u043B\u0435\u043D\u043E 2 \u0437\u0432\u0435\u0437\u0434\u044B. \u0411\u0430\u043B\u0430\u043D\u0441: ${newBalance}`).catch(() => { });
 
-                console.log(`Referral: ${userId} referred by ${referrerId}`);
+                    console.log(`Referral: ${userId} referred by ${referrerId}`);
+                }
             }
         }
+    } catch (e) {
+        console.error('Referral handling failed:', e);
     }
 
     const startPhotoUrl = `${CASINO_URL}/start.png`;
@@ -497,7 +501,7 @@ bot.on('inline_query', async (ctx) => {
         caption: '\u2B50 \u0417\u0430\u0431\u0438\u0440\u0430\u0439 \u0431\u0435\u0441\u043F\u043B\u0430\u0442\u043D\u044B\u0435 \u0437\u0432\u0451\u0437\u0434\u044B \u0441\u043E \u043C\u043D\u043E\u0439 \u0432 GiftSlot.\n\n\u041D\u0430\u0447\u043D\u0438 \u0443\u0436\u0435 \u0437\u0430\u0440\u0430\u0431\u0430\u0442\u044B\u0432\u0430\u0442\u044C \u{1F447}',
         reply_markup: {
             inline_keyboard: [[
-                { text: '\u041F\u043E\u043B\u0443\u0447\u0438\u0442\u044C \u{1F381}', url: `https://t.me/${botUserName}?start=${refParam}` }
+                { text: '\u041F\u043E\u043B\u0443\u0447\u0438\u0442\u044C \u{1F381}', url: `https://t.me/${botUserName}?startapp=${refParam}` }
             ]]
         }
     }], { cache_time: 0, is_personal: true });
@@ -983,7 +987,7 @@ app.post('/api/prepare-share', requireAuth, async (req, res) => {
             caption: '\u2B50 \u0417\u0430\u0431\u0438\u0440\u0430\u0439 \u0431\u0435\u0441\u043F\u043B\u0430\u0442\u043D\u044B\u0435 \u0437\u0432\u0451\u0437\u0434\u044B \u0441\u043E \u043C\u043D\u043E\u0439 \u0432 GiftSlot.\n\n\u041D\u0430\u0447\u043D\u0438 \u0443\u0436\u0435 \u0437\u0430\u0440\u0430\u0431\u0430\u0442\u044B\u0432\u0430\u0442\u044C \u{1F447}',
             reply_markup: {
                 inline_keyboard: [[
-                    { text: '\u041F\u043E\u043B\u0443\u0447\u0438\u0442\u044C \u{1F381}', url: `https://t.me/${botUserName}?start=${refParam}` }
+                    { text: '\u041F\u043E\u043B\u0443\u0447\u0438\u0442\u044C \u{1F381}', url: `https://t.me/${botUserName}?startapp=${refParam}` }
                 ]]
             }
         };
@@ -1041,28 +1045,33 @@ app.post('/api/referral/activate', requireAuth, async (req, res) => {
         return res.status(400).json({ success: false, error: 'Invalid referrer ID' });
     }
 
-    const existing = await getReferrer(userId);
-    if (existing) {
-        return res.status(400).json({ success: false, error: 'Already referred', referrer: existing });
+    try {
+        const existing = await getReferrer(userId);
+        if (existing) {
+            return res.status(400).json({ success: false, error: 'Already referred', referrer: existing });
+        }
+
+        await setReferral(userId, parseInt(cleanReferrerId));
+
+        const rewardAmount = 2;
+        const newReferrerBalance = await updateBalance(parseInt(cleanReferrerId), rewardAmount);
+
+        await logTransaction({
+            id: `ref_reward_${cleanReferrerId}_${userId}_${Date.now()}`,
+            userId: parseInt(cleanReferrerId),
+            amount: rewardAmount,
+            type: 'referral_reward',
+            sourceUser: userId
+        });
+
+        bot.telegram.sendMessage(cleanReferrerId, `\u{1F389} \u041A\u0442\u043E-\u0442\u043E \u043F\u0435\u0440\u0435\u0448\u0435\u043B \u043F\u043E \u0432\u0430\u0448\u0435\u0439 \u0441\u0441\u044B\u043B\u043A\u0435! \u0412\u0430\u043C \u043D\u0430\u0447\u0438\u0441\u043B\u0435\u043D\u043E ${rewardAmount} \u0437\u0432\u0435\u0437\u0434\u044B.`).catch(() => { });
+
+        console.log(`Referral activated: ${userId} referred by ${cleanReferrerId}`);
+        res.json({ success: true, reward: rewardAmount });
+    } catch (e) {
+        console.error('Referral activate error:', e);
+        res.status(500).json({ success: false, error: 'Internal error' });
     }
-
-    await setReferral(userId, parseInt(cleanReferrerId));
-
-    const rewardAmount = 2;
-    const newReferrerBalance = await updateBalance(parseInt(cleanReferrerId), rewardAmount);
-
-    await logTransaction({
-        id: `ref_reward_${cleanReferrerId}_${userId}_${Date.now()}`,
-        userId: parseInt(cleanReferrerId),
-        amount: rewardAmount,
-        type: 'referral_reward',
-        sourceUser: userId
-    });
-
-    bot.telegram.sendMessage(cleanReferrerId, `\u{1F389} \u041A\u0442\u043E-\u0442\u043E \u043F\u0435\u0440\u0435\u0448\u0435\u043B \u043F\u043E \u0432\u0430\u0448\u0435\u0439 \u0441\u0441\u044B\u043B\u043A\u0435! \u0412\u0430\u043C \u043D\u0430\u0447\u0438\u0441\u043B\u0435\u043D\u043E ${rewardAmount} \u0437\u0432\u0435\u0437\u0434\u044B.`).catch(() => { });
-
-    console.log(`Referral activated: ${userId} referred by ${cleanReferrerId}`);
-    res.json({ success: true, reward: rewardAmount });
 });
 
 app.get('/api/debug/bot-info', (req, res) => {
@@ -1150,6 +1159,14 @@ const startBot = async () => {
             console.log(`Bot initialized: @${BOT_USERNAME}`);
         } catch (e) {
             console.error('Failed to fetch bot info after retries:', e);
+        }
+
+        try {
+            await bot.telegram.setChatMenuButton({
+                menu_button: { type: 'web_app', text: '\u0418\u0433\u0440\u0430\u0442\u044C', url: CASINO_URL }
+            });
+        } catch (e) {
+            console.error('Failed to set menu button:', e);
         }
 
         if (process.env.NODE_ENV === 'production' && CASINO_URL && CASINO_URL.startsWith('https')) {
