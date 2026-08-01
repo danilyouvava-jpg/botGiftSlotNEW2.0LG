@@ -2,6 +2,13 @@ import React, { useEffect, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { X, Users, Star } from 'lucide-react';
 
+function authHeaders(): Record<string, string> {
+    try {
+        const initData = (window as any).Telegram?.WebApp?.initData;
+        return initData ? { 'x-telegram-initdata': initData } : {};
+    } catch { return {}; }
+}
+
 interface ReferralModalProps {
   isOpen: boolean;
   onClose: () => void;
@@ -15,7 +22,7 @@ export default function ReferralModal({ isOpen, onClose, userId }: ReferralModal
   useEffect(() => {
     if (isOpen && userId) {
       setLoading(true);
-      fetch(`/api/referrals/${userId}`)
+      fetch(`/api/referrals/${userId}`, { headers: authHeaders() })
         .then(res => res.json())
         .then(data => {
           setReferralStats({ count: data.count || 0, earned: data.earned || 0 });
@@ -86,7 +93,7 @@ export default function ReferralModal({ isOpen, onClose, userId }: ReferralModal
                   try {
                     const response = await fetch('/api/prepare-share', {
                       method: 'POST',
-                      headers: { 'Content-Type': 'application/json' },
+                      headers: { 'Content-Type': 'application/json', ...authHeaders() },
                       body: JSON.stringify({ userId })
                     });
                     const data = await response.json();

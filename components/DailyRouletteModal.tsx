@@ -2,6 +2,13 @@ import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { X, Gift } from 'lucide-react';
 
+function authHeaders(): Record<string, string> {
+    try {
+        const initData = (window as any).Telegram?.WebApp?.initData;
+        return initData ? { 'x-telegram-initdata': initData } : {};
+    } catch { return {}; }
+}
+
 interface DailyRouletteModalProps {
     isOpen: boolean;
     onClose: () => void;
@@ -46,7 +53,7 @@ export default function DailyRouletteModal({ isOpen, onClose, userId, onWin }: D
                 clearTimeout(spinTimeoutRef.current);
             }
         } else if (userId) {
-            fetch(`/api/roulette/status/${userId}`)
+            fetch(`/api/roulette/status/${userId}`, { headers: authHeaders() })
                 .then(res => res.json())
                 .then(data => {
                     setCanSpin(data.canSpin);
@@ -142,7 +149,7 @@ export default function DailyRouletteModal({ isOpen, onClose, userId, onWin }: D
             try {
                 const response = await fetch('/api/roulette/claim', {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
+                    headers: { 'Content-Type': 'application/json', ...authHeaders() },
                     body: JSON.stringify({ userId, amount: prize })
                 });
                 const data = await response.json();

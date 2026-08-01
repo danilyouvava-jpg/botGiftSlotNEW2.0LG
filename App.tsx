@@ -14,6 +14,20 @@ import { Loader2, Wallet, X, Volume2, VolumeX, Settings, Info, Zap, Star, Plus, 
 import { useGameEngine } from './hooks/useGameEngine';
 import pako from 'pako'; // For preloading Lotties if needed
 
+function getTelegramInitData(): string | undefined {
+    try {
+        const tg = (window as any).Telegram?.WebApp;
+        return tg?.initData || undefined;
+    } catch {
+        return undefined;
+    }
+}
+
+function authHeaders(): Record<string, string> {
+    const initData = getTelegramInitData();
+    return initData ? { 'x-telegram-initdata': initData } : {};
+}
+
 // Configuration
 const BET_VALUES = [0.1, 0.3, 0.5, 1, 1.5, 2, 2.5];
 const STAR_BET_VALUES = [1, 5, 10, 25, 50];
@@ -92,7 +106,7 @@ export default function App() {
             if (id) {
                 setUserId(id);
 
-                fetch(`/api/balance/${id}`)
+                fetch(`/api/balance/${id}`, { headers: authHeaders() })
                     .then(r => r.json())
                     .then(d => {
                         if (d.stars !== undefined) setStarsBalance(d.stars);
@@ -128,7 +142,7 @@ export default function App() {
 
             const resp = await fetch('/api/withdraw', {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers: { 'Content-Type': 'application/json', ...authHeaders() },
                 body: JSON.stringify({ userId, amount, username })
             });
 
@@ -148,7 +162,7 @@ export default function App() {
         if (!userId) return;
         fetch('/api/game/transaction', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: { 'Content-Type': 'application/json', ...authHeaders() },
             body: JSON.stringify({ userId, amount })
         }).catch(e => console.error('Sync error', e));
     };
@@ -179,7 +193,7 @@ export default function App() {
         try {
             const resp = await fetch('/api/create-invoice', {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers: { 'Content-Type': 'application/json', ...authHeaders() },
                 body: JSON.stringify({ amount: Math.floor(amount), userId })
             });
             const data = await resp.json();
@@ -209,7 +223,7 @@ export default function App() {
         try {
             const resp = await fetch('/api/promocode/activate', {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers: { 'Content-Type': 'application/json', ...authHeaders() },
                 body: JSON.stringify({ userId, code })
             });
             const data = await resp.json();

@@ -1,5 +1,6 @@
 const fs = require('fs');
 const path = require('path');
+const crypto = require('crypto');
 const express = require('express');
 const cors = require('cors');
 const { Telegraf } = require('telegraf');
@@ -39,9 +40,71 @@ const app = express();
 const bot = new Telegraf(token);
 const PORT = process.env.PORT || 3002;
 
-app.use(cors());
+app.use(cors({ origin: process.env.NODE_ENV === 'production' ? CASINO_URL : true }));
 app.use(express.json());
 app.use(express.static(path.join(__dirname, 'dist')));
+
+// --- Telegram initData verification ---
+function verifyInitData(initData, botToken) {
+    if (!initData || !botToken) return false;
+    try {
+        const urlParams = new URLSearchParams(initData);
+        const hash = urlParams.get('hash');
+        urlParams.delete('hash');
+
+        const dataCheckArr = [];
+        for (const [key, value] of urlParams.entries()) {
+            dataCheckArr.push(`${key}=${value}`);
+        }
+        dataCheckArr.sort();
+        const dataCheckString = dataCheckArr.join('\n');
+
+        const secretKey = crypto.createHmac('sha256', 'WebAppData').update(botToken).digest();
+        const computedHash = crypto.createHmac('sha256', secretKey).update(dataCheckString).digest('hex');
+
+        return computedHash === hash;
+    } catch {
+        return false;
+    }
+}
+
+function authMiddleware(req, res, next) {
+    if (process.env.NODE_ENV !== 'production') return next();
+
+    const initData = req.headers['x-telegram-initdata'];
+    if (!initData) {
+        return res.status(401).json({ error: 'Missing Telegram auth' });
+    }
+
+    if (!verifyInitData(initData, token)) {
+        return res.status(403).json({ error: 'Invalid Telegram auth' });
+    }
+
+    try {
+        const urlParams = new URLSearchParams(initData);
+        const user = JSON.parse(urlParams.get('user') || '{}');
+        if (!user.id) {
+            return res.status(403).json({ error: 'No user in auth data' });
+        }
+        req.authUserId = user.id;
+        req.authUser = user;
+    } catch {
+        return res.status(403).json({ error: 'Invalid auth user data' });
+    }
+
+    next();
+}
+
+function requireAuth(req, res, next) {
+    if (process.env.NODE_ENV !== 'production') {
+        req.authUserId = req.body.userId || req.params.userId;
+        return next();
+    }
+    if (!req.authUserId) {
+        return res.status(401).json({ error: 'Not authenticated' });
+    }
+    next();
+}
 
 // --- PostgreSQL ---
 const pool = new Pool({
@@ -349,24 +412,27 @@ bot.action(/^decline_(\d+)_(\d+)$/, async (ctx) => {
 });
 
 // --- API Endpoints ---
-app.post('/api/withdraw', async (req, res) => {
-    const { userId, amount, username } = req.body;
+app.use('/api', authMiddleware);
 
-    if (!userId || !amount || amount < 500) {
-        return res.status(400).json({ error: '\u041D\u0435\u0432\u0435\u0440\u043D\u044B\u0439 \u0437\u0430\u043F\u0440\u043E\u0441. \u041C\u0438\u043D\u0438\u043C\u0430\u043B\u044C\u043D\u044B\u0439 \u0432\u044B\u0432\u043E\u0434 500 \u0437\u0432\u0435\u0437\u0434.' });
+app.post('/api/withdraw', requireAuth, async (req, res) => {
+    const { userId, amount, username } = req.body;
+    const requestUserId = process.env.NODE_ENV === 'production' ? req.authUserId : userId;
+
+    if (!requestUserId || !amount || amount < 500) {
+        return res.status(400).json({ error: 'Invalid request. Minimum withdrawal 500 stars.' });
     }
 
-    const currentBalance = await getBalance(userId);
+    const currentBalance = await getBalance(requestUserId);
 
     if (currentBalance < amount) {
-        return res.status(400).json({ error: '\u041D\u0435\u0434\u043E\u0441\u0442\u0430\u0442\u043E\u0447\u043D\u043E \u0441\u0440\u0435\u0434\u0441\u0442\u0432' });
+        return res.status(400).json({ error: 'Insufficient funds' });
     }
 
-    const newBalance = await updateBalance(userId, -amount);
+    const newBalance = await updateBalance(requestUserId, -amount);
 
     await logTransaction({
-        id: `withdraw_${userId}_${Date.now()}`,
-        userId: userId,
+        id: `withdraw_${requestUserId}_${Date.now()}`,
+        userId: requestUserId,
         username: username,
         amount: amount,
         type: 'withdrawal',
@@ -376,13 +442,13 @@ app.post('/api/withdraw', async (req, res) => {
     try {
         if (ADMIN_ID) {
             await bot.telegram.sendMessage(ADMIN_ID,
-                `\u{1F4B8} \u0417\u0430\u043F\u0440\u043E\u0441 \u043D\u0430 \u0432\u044B\u0432\u043E\u0434!\nUser: ${username} (ID: ${userId})\nAmount: ${amount} Stars\nBalance left: ${newBalance}`,
+                `\u{1F4B8} \u0417\u0430\u043F\u0440\u043E\u0441 \u043D\u0430 \u0432\u044B\u0432\u043E\u0434!\nUser: ${username} (ID: ${requestUserId})\nAmount: ${amount} Stars\nBalance left: ${newBalance}`,
                 {
                     reply_markup: {
                         inline_keyboard: [
                             [
-                                { text: '\u2705 \u041E\u0434\u043E\u0431\u0440\u0438\u0442\u044C', callback_data: `approve_${userId}_${amount}` },
-                                { text: '\u274C \u041E\u0442\u043A\u043B\u043E\u043D\u0438\u0442\u044C', callback_data: `decline_${userId}_${amount}` }
+                                { text: '\u2705 \u041E\u0434\u043E\u0431\u0440\u0438\u0442\u044C', callback_data: `approve_${requestUserId}_${amount}` },
+                                { text: '\u274C \u041E\u0442\u043A\u043B\u043E\u043D\u0438\u0442\u044C', callback_data: `decline_${requestUserId}_${amount}` }
                             ]
                         ]
                     }
@@ -392,43 +458,63 @@ app.post('/api/withdraw', async (req, res) => {
         res.json({ success: true, newBalance });
     } catch (e) {
         console.error('Failed to notify admin:', e);
-        await updateBalance(userId, amount);
+        await updateBalance(requestUserId, amount);
         res.status(500).json({ error: 'Internal Server Error' });
     }
 });
 
-app.get('/api/balance/:userId', async (req, res) => {
-    const userId = parseInt(req.params.userId);
-    const balance = await getBalance(userId);
-    res.json({ stars: balance });
-});
-
-app.get('/api/referrals/:userId', async (req, res) => {
-    const userId = req.params.userId;
-    const stats = await getReferralStats(userId);
-    res.json(stats);
-});
-
-app.get('/api/roulette/status/:userId', async (req, res) => {
-    const userId = req.params.userId;
-    const lastSpin = await getRouletteLastSpin(userId);
-    const now = Date.now();
-    const cooldownMs = 5 * 60 * 60 * 1000;
-
-    let canSpin = true;
-    let nextSpinTime = 0;
-
-    if (now - lastSpin < cooldownMs) {
-        canSpin = false;
-        nextSpinTime = lastSpin + cooldownMs;
+app.get('/api/balance/:userId', requireAuth, async (req, res) => {
+    try {
+        const userId = parseInt(req.params.userId);
+        const authId = process.env.NODE_ENV === 'production' ? req.authUserId : userId;
+        if (authId !== userId) return res.status(403).json({ error: 'Forbidden' });
+        const balance = await getBalance(userId);
+        res.json({ stars: balance });
+    } catch (e) {
+        res.status(500).json({ error: 'Internal error' });
     }
-
-    res.json({ canSpin, nextSpinTime });
 });
 
-app.post('/api/roulette/claim', async (req, res) => {
+app.get('/api/referrals/:userId', requireAuth, async (req, res) => {
+    try {
+        const userId = req.params.userId;
+        const authId = process.env.NODE_ENV === 'production' ? String(req.authUserId) : userId;
+        if (authId !== userId) return res.status(403).json({ error: 'Forbidden' });
+        const stats = await getReferralStats(userId);
+        res.json(stats);
+    } catch (e) {
+        res.status(500).json({ error: 'Internal error' });
+    }
+});
+
+app.get('/api/roulette/status/:userId', requireAuth, async (req, res) => {
+    try {
+        const userId = req.params.userId;
+        const authId = process.env.NODE_ENV === 'production' ? String(req.authUserId) : userId;
+        if (authId !== userId) return res.status(403).json({ error: 'Forbidden' });
+        const lastSpin = await getRouletteLastSpin(userId);
+        const now = Date.now();
+        const cooldownMs = 5 * 60 * 60 * 1000;
+
+        let canSpin = true;
+        let nextSpinTime = 0;
+
+        if (now - lastSpin < cooldownMs) {
+            canSpin = false;
+            nextSpinTime = lastSpin + cooldownMs;
+        }
+
+        res.json({ canSpin, nextSpinTime });
+    } catch (e) {
+        res.status(500).json({ error: 'Internal error' });
+    }
+});
+
+app.post('/api/roulette/claim', requireAuth, async (req, res) => {
     let { userId, amount } = req.body;
     userId = parseInt(userId);
+    const authId = process.env.NODE_ENV === 'production' ? req.authUserId : userId;
+    if (authId !== userId) return res.status(403).json({ error: 'Forbidden' });
 
     if (!userId || typeof amount !== 'number' || amount <= 0) {
         return res.status(400).json({ error: 'Invalid params' });
@@ -453,17 +539,24 @@ app.post('/api/roulette/claim', async (req, res) => {
     res.json({ success: true, newBalance, prize: amount });
 });
 
-app.post('/api/game/transaction', async (req, res) => {
+app.post('/api/game/transaction', requireAuth, async (req, res) => {
     const { userId, amount } = req.body;
+    const authId = process.env.NODE_ENV === 'production' ? req.authUserId : userId;
+    if (authId !== userId) return res.status(403).json({ error: 'Forbidden' });
     if (!userId || typeof amount !== 'number') {
         return res.status(400).json({ error: 'Invalid params' });
+    }
+    if (Math.abs(amount) > 500) {
+        return res.status(400).json({ error: 'Transaction too large' });
     }
     const newBalance = await updateBalance(userId, amount);
     res.json({ balance: newBalance });
 });
 
-app.post('/api/promocode/activate', async (req, res) => {
+app.post('/api/promocode/activate', requireAuth, async (req, res) => {
     const { userId, code } = req.body;
+    const authId = process.env.NODE_ENV === 'production' ? req.authUserId : userId;
+    if (authId !== userId) return res.status(403).json({ error: 'Forbidden' });
 
     if (!userId || !code) {
         return res.status(400).json({ success: false, error: 'Missing userId or code' });
@@ -499,8 +592,10 @@ app.post('/api/promocode/activate', async (req, res) => {
     res.json({ success: true, newBalance, reward });
 });
 
-app.post('/api/create-invoice', async (req, res) => {
+app.post('/api/create-invoice', requireAuth, async (req, res) => {
     const { amount, userId } = req.body;
+    const authId = process.env.NODE_ENV === 'production' ? req.authUserId : userId;
+    if (authId !== userId) return res.status(403).json({ error: 'Forbidden' });
 
     if (!userId || !amount || amount <= 0) {
         return res.status(400).json({ error: 'Invalid amount or userId' });
@@ -530,12 +625,10 @@ app.post('/api/create-invoice', async (req, res) => {
     }
 });
 
-app.post('/api/prepare-share', async (req, res) => {
+app.post('/api/prepare-share', requireAuth, async (req, res) => {
     const { userId } = req.body;
-
-    if (!userId) {
-        return res.status(400).json({ error: 'Missing userId' });
-    }
+    const authId = process.env.NODE_ENV === 'production' ? req.authUserId : userId;
+    if (authId !== userId) return res.status(403).json({ error: 'Forbidden' });
 
     try {
         const botUserName = (await bot.telegram.getMe()).username;
@@ -572,7 +665,10 @@ app.post('/api/prepare-share', async (req, res) => {
     }
 });
 
-app.post('/api/test/add-balance', async (req, res) => {
+app.post('/api/test/add-balance', requireAuth, async (req, res) => {
+    if (process.env.NODE_ENV === 'production') {
+        return res.status(404).json({ error: 'Not found' });
+    }
     const { userId, amount } = req.body;
     if (!userId || !amount) return res.status(400).json({ error: 'Invalid params' });
 
@@ -587,8 +683,10 @@ app.post('/api/test/add-balance', async (req, res) => {
     res.json({ success: true, newBalance });
 });
 
-app.post('/api/referral/activate', async (req, res) => {
+app.post('/api/referral/activate', requireAuth, async (req, res) => {
     const { userId, referrerId } = req.body;
+    const authId = process.env.NODE_ENV === 'production' ? req.authUserId : userId;
+    if (authId !== userId) return res.status(403).json({ error: 'Forbidden' });
 
     if (!userId || !referrerId) {
         return res.status(400).json({ success: false, error: 'Missing params' });
@@ -628,18 +726,15 @@ app.post('/api/referral/activate', async (req, res) => {
     res.json({ success: true, reward: rewardAmount });
 });
 
-app.get('/api/debug/bot-info', async (req, res) => {
-    try {
-        const me = await bot.telegram.getMe();
-        res.json({
-            username: me.username,
-            id: me.id,
-            is_bot: me.is_bot,
-            token_prefix: token.split(':')[0]
-        });
-    } catch (e) {
-        res.status(500).json({ error: 'Failed to get bot info', details: e.message });
+app.get('/api/debug/bot-info', (req, res) => {
+    if (process.env.NODE_ENV === 'production') {
+        return res.status(404).json({ error: 'Not found' });
     }
+    bot.telegram.getMe().then(me => {
+        res.json({ username: me.username, id: me.id, is_bot: me.is_bot });
+    }).catch(e => {
+        res.status(500).json({ error: 'Failed', details: e.message });
+    });
 });
 
 const sleep = ms => new Promise(r => setTimeout(r, ms));
