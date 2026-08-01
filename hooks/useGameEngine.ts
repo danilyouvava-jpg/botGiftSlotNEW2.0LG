@@ -60,6 +60,7 @@ export const useGameEngine = ({
 
   const spinSoundRef = useRef<HTMLAudioElement | null>(null);
   const winSoundRef = useRef<HTMLAudioElement | null>(null);
+  const isSpinningRef = useRef(false);
 
   useEffect(() => {
       spinSoundRef.current = new Audio('/notification-sound.mp3');
@@ -67,13 +68,20 @@ export const useGameEngine = ({
   }, []);
 
   const handleSpin = useCallback(() => {
+    if (isSpinningRef.current) return;
+    isSpinningRef.current = true;
+
     const activeBalance = currency === 'TON' ? balance : starsBalance;
-    if (activeBalance < bet || gameState !== GameState.IDLE) return;
+    if (activeBalance < bet || gameState !== GameState.IDLE) {
+      isSpinningRef.current = false;
+      return;
+    }
 
     // Safety check for negative balance
     if (activeBalance - bet < 0) {
-        console.error("Attempted spin with insufficient funds");
-        return;
+      console.error("Attempted spin with insufficient funds");
+      isSpinningRef.current = false;
+      return;
     }
 
     if (currency === 'TON') {
@@ -220,9 +228,13 @@ export const useGameEngine = ({
                  winSoundRef.current.play().catch(e => console.error("Win audio play failed", e));
              }
 
-             setTimeout(() => setGameState(GameState.IDLE), 2500);
+             setTimeout(() => {
+                 setGameState(GameState.IDLE);
+                 isSpinningRef.current = false;
+             }, 2500);
          } else {
              setGameState(GameState.IDLE);
+             isSpinningRef.current = false;
          }
     }
   };
@@ -521,6 +533,7 @@ export const useGameEngine = ({
           setBalance(prev => Number((prev + winAmount).toFixed(2)));
       } else {
           setStarsBalance(prev => Number((prev + winAmount).toFixed(2)));
+          onTransaction?.(winAmount);
       }
 
       if (isActive && winSoundRef.current) {
@@ -530,6 +543,7 @@ export const useGameEngine = ({
 
       setTimeout(() => {
           setGameState(GameState.IDLE);
+          isSpinningRef.current = false;
       }, 4000);
   };
 

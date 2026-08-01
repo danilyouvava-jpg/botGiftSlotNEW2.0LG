@@ -443,23 +443,29 @@ bot.on('successful_payment', async (ctx) => {
     const amount = payment.total_amount;
     const currency = payment.currency;
 
-    const txData = {
-        id: payment.provider_payment_charge_id,
-        userId: userId,
-        username: ctx.from.username,
-        amount: amount,
-        currency: currency,
-        payload: payment.invoice_payload,
-        type: 'deposit'
-    };
-
-    if (await logTransaction(txData)) {
+    try {
         const newBalance = await updateBalance(userId, amount);
+
+        await logTransaction({
+            id: payment.provider_payment_charge_id,
+            userId: userId,
+            username: ctx.from.username,
+            amount: amount,
+            currency: currency,
+            payload: payment.invoice_payload,
+            type: 'deposit'
+        }).catch(e => console.error('Transaction log failed (balance already credited):', e));
+
         await ctx.reply(`\u2705 \u041E\u043F\u043B\u0430\u0442\u0430 \u043F\u0440\u043E\u0448\u043B\u0430 \u0443\u0441\u043F\u0435\u0448\u043D\u043E! \u041F\u043E\u043B\u0443\u0447\u0435\u043D\u043E ${amount} \u0437\u0432\u0435\u0437\u0434. \u0411\u0430\u043B\u0430\u043D\u0441: ${newBalance}`);
 
         if (ADMIN_ID) {
             bot.telegram.sendMessage(ADMIN_ID, `\u{1F4B0} \u041D\u043E\u0432\u043E\u0435 \u043F\u043E\u043F\u043E\u043B\u043D\u0435\u043D\u0438\u0435!\nUser: ${ctx.from.first_name} (@${ctx.from.username})\nAmount: ${amount} Stars`).catch(e => console.error('Admin notify failed', e));
         }
+    } catch (e) {
+        console.error('CRITICAL: Failed to credit balance for payment:', payment.provider_payment_charge_id, e);
+        try {
+            await ctx.reply(`\u26A0\uFE0F \u041E\u043F\u043B\u0430\u0442\u0430 \u043F\u043E\u043B\u0443\u0447\u0435\u043D\u0430, \u043D\u043E \u043F\u0440\u043E\u0438\u0437\u043E\u0448\u043B\u0430 \u043E\u0448\u0438\u0431\u043A\u0430. \u041D\u0430\u043F\u0438\u0448\u0438\u0442\u0435 @admin \u0434\u043B\u044F \u043F\u043E\u043C\u043E\u0449\u0438.`);
+        } catch { }
     }
 });
 
@@ -524,7 +530,15 @@ app.post('/api/withdraw', requireAuth, async (req, res) => {
         return res.status(400).json({ error: 'Invalid request. Minimum withdrawal 500 stars.' });
     }
 
-    const { success, newBalance } = await atomicWithdraw(requestUserId, amount);
+    let success, newBalance;
+    try {
+        const result = await atomicWithdraw(requestUserId, amount);
+        success = result.success;
+        newBalance = result.newBalance;
+    } catch (e) {
+        console.error('Withdraw atomic error:', e);
+        return res.status(500).json({ error: 'Internal error' });
+    }
 
     if (!success) {
         return res.status(400).json({ error: 'Insufficient funds' });
@@ -674,18 +688,27 @@ app.post('/api/promocode/activate', requireAuth, async (req, res) => {
             return res.status(400).json({ success: false, error: '\u041D\u0435\u0432\u0435\u0440\u043D\u044B\u0439 \u043F\u0440\u043E\u043C\u043E\u043A\u043E\u0434' });
         }
 
-        if (promo.used_by.includes(userId)) {
+        const userIdStr = String(userId);
+        const usedByStr = (promo.used_by || []).map(id => String(id));
+
+        if (usedByStr.includes(userIdStr)) {
             await client.query('ROLLBACK');
             return res.status(400).json({ success: false, error: '\u0412\u044B \u0443\u0436\u0435 \u0438\u0441\u043F\u043E\u043B\u044C\u0437\u043E\u0432\u0430\u043B\u0438 \u044D\u0442\u043E\u0442 \u043F\u0440\u043E\u043C\u043E\u043A\u043E\u0434' });
         }
 
-        if (promo.max_usages > 0 && promo.used_by.length >= promo.max_usages) {
+        if (promo.max_usages > 0 && usedByStr.length >= promo.max_usages) {
             await client.query('ROLLBACK');
             return res.status(400).json({ success: false, error: '\u042D\u0442\u043E\u0442 \u043F\u0440\u043E\u043C\u043E\u043A\u043E\u0434 \u0431\u043E\u043B\u044C\u0448\u0435 \u043D\u0435 \u0434\u0435\u0439\u0441\u0442\u0432\u0438\u0442\u0435\u043B\u0435\u043D (\u043B\u0438\u043C\u0438\u0442 \u0438\u0441\u0447\u0435\u0440\u043F\u0430\u043D)' });
         }
 
         const reward = Number(promo.reward);
-        await client.query('UPDATE promocodes SET used_by = array_append(used_by, $2) WHERE code = $1 AND NOT ($2 = ANY(used_by))', [upperCode, userId]);
+        const promoUpdate = await client.query('UPDATE promocodes SET used_by = array_append(used_by, $2) WHERE code = $1 AND NOT ($2 = ANY(used_by))', [upperCode, userId]);
+
+        if (promoUpdate.rowCount === 0) {
+            await client.query('ROLLBACK');
+            return res.status(400).json({ success: false, error: '\u041F\u0440\u043E\u043C\u043E\u043A\u043E\u0434 \u0443\u0436\u0435 \u0438\u0441\u043F\u043E\u043B\u044C\u0437\u043E\u0432\u0430\u043D' });
+        }
+
         const balRes = await client.query(`
             INSERT INTO balances (user_id, balance) VALUES ($1, $2)
             ON CONFLICT (user_id) DO UPDATE SET balance = ROUND((balances.balance + $2)::numeric, 2)
@@ -873,43 +896,47 @@ async function retryApi(fn, retries = 5, delay = 2000) {
 }
 
 async function checkDailyNotifications() {
-    const balances = await getAllBalances();
-    const rouletteData = await getAllRoulette();
-    const notifications = await getAllNotifications();
-    const now = Date.now();
-    const COOLDOWN = 5 * 60 * 60 * 1000;
+    try {
+        const balances = await getAllBalances();
+        const rouletteData = await getAllRoulette();
+        const notifications = await getAllNotifications();
+        const now = Date.now();
+        const COOLDOWN = 5 * 60 * 60 * 1000;
 
-    for (const userId of Object.keys(balances)) {
-        const lastSpin = rouletteData[userId] || 0;
-        const lastNotification = notifications[userId] || 0;
+        for (const userId of Object.keys(balances)) {
+            const lastSpin = rouletteData[userId] || 0;
+            const lastNotification = notifications[userId] || 0;
 
-        const nextSpinTime = lastSpin + COOLDOWN;
-        const isEligible = now >= nextSpinTime;
+            const nextSpinTime = lastSpin + COOLDOWN;
+            const isEligible = now >= nextSpinTime;
 
-        if (isEligible && lastNotification < nextSpinTime) {
-            try {
-                await bot.telegram.sendMessage(userId,
-                    '\u{1F3B0} *Ежедневная Рулетка Доступна!* \u{1F3B0}\n\n' +
-                    'Прошло 5 часов! Самое время испытать удачу и забрать свой бонус.\n\n' +
-                    '\u{1F447} Жми кнопку ниже!',
-                    {
-                        parse_mode: 'Markdown',
-                        reply_markup: {
-                            inline_keyboard: [
-                                [{ text: '\u{1F3B0} Крутить Рулетку', web_app: { url: CASINO_URL } }]
-                            ]
+            if (isEligible && lastNotification < nextSpinTime) {
+                try {
+                    await bot.telegram.sendMessage(userId,
+                        '\u{1F3B0} *Ежедневная Рулетка Доступна!* \u{1F3B0}\n\n' +
+                        'Прошло 5 часов! Самое время испытать удачу и забрать свой бонус.\n\n' +
+                        '\u{1F447} Жми кнопку ниже!',
+                        {
+                            parse_mode: 'Markdown',
+                            reply_markup: {
+                                inline_keyboard: [
+                                    [{ text: '\u{1F3B0} Крутить Рулетку', web_app: { url: CASINO_URL } }]
+                                ]
+                            }
                         }
-                    }
-                );
+                    );
 
-                await setNotificationTime(parseInt(userId), now);
-                console.log(`Notification sent to ${userId}`);
-            } catch (e) {
-                if (e.description && e.description.includes('blocked')) {
                     await setNotificationTime(parseInt(userId), now);
+                    console.log(`Notification sent to ${userId}`);
+                } catch (e) {
+                    if (e.description && e.description.includes('blocked')) {
+                        await setNotificationTime(parseInt(userId), now);
+                    }
                 }
             }
         }
+    } catch (e) {
+        console.error('checkDailyNotifications failed:', e);
     }
 }
 
