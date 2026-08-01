@@ -249,7 +249,77 @@ async function getPromo(code) {
 }
 
 async function usePromo(code, userId) {
-    await pool.query('UPDATE promocodes SET used_by = array_append(used_by, $2) WHERE code = $1', [code, userId]);
+    await pool.query('UPDATE promocodes SET used_by = array_append(used_by, $2) WHERE code = $1 AND NOT ($2 = ANY(used_by))', [code, userId]);
+}
+
+async function atomicWithdraw(userId, amount) {
+    const client = await pool.connect();
+    try {
+        await client.query('BEGIN');
+        const res = await client.query(
+            'SELECT balance FROM balances WHERE user_id = $1 FOR UPDATE',
+            [userId]
+        );
+        const currentBalance = res.rows.length > 0 ? Number(res.rows[0].balance) : 0;
+        if (currentBalance < amount) {
+            await client.query('ROLLBACK');
+            return { success: false, newBalance: currentBalance };
+        }
+        const updateRes = await client.query(
+            'UPDATE balances SET balance = balance - $1 WHERE user_id = $2 RETURNING balance',
+            [amount, userId]
+        );
+        await client.query('COMMIT');
+        return { success: true, newBalance: Number(updateRes.rows[0].balance) };
+    } catch (e) {
+        await client.query('ROLLBACK');
+        throw e;
+    } finally {
+        client.release();
+    }
+}
+
+async function atomicRouletteClaim(userId, amount) {
+    const cooldownMs = 5 * 60 * 60 * 1000;
+    const client = await pool.connect();
+    try {
+        await client.query('BEGIN');
+        const res = await client.query(
+            'SELECT last_spin FROM roulette WHERE user_id = $1 FOR UPDATE',
+            [userId]
+        );
+        const lastSpin = res.rows.length > 0 ? Number(res.rows[0].last_spin) : 0;
+        const now = Date.now();
+        if (now - lastSpin < cooldownMs) {
+            await client.query('ROLLBACK');
+            return { success: false, remainingMs: cooldownMs - (now - lastSpin) };
+        }
+        await client.query(`
+            INSERT INTO roulette (user_id, last_spin) VALUES ($1, $2)
+            ON CONFLICT (user_id) DO UPDATE SET last_spin = $2
+        `, [userId, now]);
+        const updateRes = await client.query(
+            'UPDATE balances SET balance = balance + $1 WHERE user_id = $2 RETURNING balance',
+            [amount, userId]
+        );
+        if (updateRes.rows.length === 0) {
+            await client.query(
+                'INSERT INTO balances (user_id, balance) VALUES ($1, $2) RETURNING balance',
+                [userId, amount]
+            );
+        }
+        await client.query('COMMIT');
+        return { success: true, newBalance: Number(updateRes.rows[0]?.balance || amount) };
+    } catch (e) {
+        await client.query('ROLLBACK');
+        throw e;
+    } finally {
+        client.release();
+    }
+}
+
+async function updateTransactionStatus(txId, status) {
+    await pool.query('UPDATE transactions SET status = $1 WHERE id = $2', [status, txId]);
 }
 
 async function seedPromos() {
@@ -392,20 +462,30 @@ bot.on('inline_query', async (ctx) => {
     }], { cache_time: 0, is_personal: true });
 });
 
-bot.action(/^approve_(\d+)_(\d+)$/, async (ctx) => {
+bot.action(/^approve_(\d+)_(\d+)_(.+)$/, async (ctx) => {
+    if (String(ctx.from.id) !== String(ADMIN_ID)) {
+        return ctx.answerCbQuery('Only admin can do this');
+    }
     const userId = parseInt(ctx.match[1]);
     const amount = parseInt(ctx.match[2]);
+    const txId = ctx.match[3];
 
+    await updateTransactionStatus(txId, 'completed');
     await ctx.editMessageText(`\u2705 \u0412\u044B\u0432\u043E\u0434 \u043E\u0434\u043E\u0431\u0440\u0435\u043D\nUser ID: ${userId}\nAmount: ${amount} Stars\nStatus: Completed`);
     await ctx.answerCbQuery('Withdrawal confirmed');
     bot.telegram.sendMessage(userId, `\u2705 \u0412\u0430\u0448 \u0432\u044B\u0432\u043E\u0434 ${amount} \u0437\u0432\u0435\u0437\u0434 \u043E\u0434\u043E\u0431\u0440\u0435\u043D! \u041E\u043D\u0438 \u0441\u043A\u043E\u0440\u043E \u043F\u043E\u0441\u0442\u0443\u043F\u044F\u0442 \u043D\u0430 \u0432\u0430\u0448 \u0441\u0447\u0451\u0442.`).catch(() => { });
 });
 
-bot.action(/^decline_(\d+)_(\d+)$/, async (ctx) => {
+bot.action(/^decline_(\d+)_(\d+)_(.+)$/, async (ctx) => {
+    if (String(ctx.from.id) !== String(ADMIN_ID)) {
+        return ctx.answerCbQuery('Only admin can do this');
+    }
     const userId = parseInt(ctx.match[1]);
     const amount = parseInt(ctx.match[2]);
+    const txId = ctx.match[3];
 
     await updateBalance(userId, amount);
+    await updateTransactionStatus(txId, 'refunded');
     await ctx.editMessageText(`\u274C \u0412\u044B\u0432\u043E\u0434 \u043E\u0442\u043A\u043B\u043E\u043D\u0435\u043D\nUser ID: ${userId}\nAmount: ${amount} Stars\nStatus: Refunded`);
     await ctx.answerCbQuery('Withdrawal declined');
     bot.telegram.sendMessage(userId, `\u274C \u0412\u0430\u0448 \u0432\u044B\u0432\u043E\u0434 ${amount} \u0437\u0432\u0435\u0437\u0434 \u0431\u044B\u043B \u043E\u0442\u043A\u043B\u043E\u043D\u0435\u043D. \u0421\u0440\u0435\u0434\u0441\u0442\u0432\u0430 \u0432\u043E\u0437\u0432\u0440\u0430\u0449\u0435\u043D\u044B \u043D\u0430 \u0431\u0430\u043B\u0430\u043D\u0441.`).catch(() => { });
@@ -422,16 +502,15 @@ app.post('/api/withdraw', requireAuth, async (req, res) => {
         return res.status(400).json({ error: 'Invalid request. Minimum withdrawal 500 stars.' });
     }
 
-    const currentBalance = await getBalance(requestUserId);
+    const { success, newBalance } = await atomicWithdraw(requestUserId, amount);
 
-    if (currentBalance < amount) {
+    if (!success) {
         return res.status(400).json({ error: 'Insufficient funds' });
     }
 
-    const newBalance = await updateBalance(requestUserId, -amount);
-
+    const txId = `withdraw_${requestUserId}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
     await logTransaction({
-        id: `withdraw_${requestUserId}_${Date.now()}`,
+        id: txId,
         userId: requestUserId,
         username: username,
         amount: amount,
@@ -447,8 +526,8 @@ app.post('/api/withdraw', requireAuth, async (req, res) => {
                     reply_markup: {
                         inline_keyboard: [
                             [
-                                { text: '\u2705 \u041E\u0434\u043E\u0431\u0440\u0438\u0442\u044C', callback_data: `approve_${requestUserId}_${amount}` },
-                                { text: '\u274C \u041E\u0442\u043A\u043B\u043E\u043D\u0438\u0442\u044C', callback_data: `decline_${requestUserId}_${amount}` }
+                                { text: '\u2705 \u041E\u0434\u043E\u0431\u0440\u0438\u0442\u044C', callback_data: `approve_${requestUserId}_${amount}_${txId}` },
+                                { text: '\u274C \u041E\u0442\u043A\u043B\u043E\u043D\u0438\u0442\u044C', callback_data: `decline_${requestUserId}_${amount}_${txId}` }
                             ]
                         ]
                     }
@@ -525,18 +604,16 @@ app.post('/api/roulette/claim', requireAuth, async (req, res) => {
         return res.status(400).json({ error: 'Invalid prize amount' });
     }
 
-    const lastSpin = await getRouletteLastSpin(userId);
-    const now = Date.now();
-    const cooldownMs = 5 * 60 * 60 * 1000;
-
-    if (now - lastSpin < cooldownMs) {
-        const remainingMs = cooldownMs - (now - lastSpin);
-        return res.status(400).json({ error: 'Cooldown active', remainingMs });
+    try {
+        const result = await atomicRouletteClaim(userId, amount);
+        if (!result.success) {
+            return res.status(400).json({ error: 'Cooldown active', remainingMs: result.remainingMs });
+        }
+        res.json({ success: true, newBalance: result.newBalance, prize: amount });
+    } catch (e) {
+        console.error('Roulette claim error:', e);
+        res.status(500).json({ error: 'Internal error' });
     }
-
-    await setRouletteLastSpin(userId, now);
-    const newBalance = await updateBalance(userId, amount);
-    res.json({ success: true, newBalance, prize: amount });
 });
 
 app.post('/api/game/transaction', requireAuth, async (req, res) => {
@@ -563,33 +640,55 @@ app.post('/api/promocode/activate', requireAuth, async (req, res) => {
     }
 
     const upperCode = code.toUpperCase().trim();
-    const promo = await getPromo(upperCode);
 
-    if (!promo || !promo.reward) {
-        return res.status(400).json({ success: false, error: '\u041D\u0435\u0432\u0435\u0440\u043D\u044B\u0439 \u043F\u0440\u043E\u043C\u043E\u043A\u043E\u0434' });
+    const client = await pool.connect();
+    try {
+        await client.query('BEGIN');
+        const promoRes = await client.query('SELECT * FROM promocodes WHERE code = $1 FOR UPDATE', [upperCode]);
+        const promo = promoRes.rows.length > 0 ? promoRes.rows[0] : null;
+
+        if (!promo || !promo.reward) {
+            await client.query('ROLLBACK');
+            return res.status(400).json({ success: false, error: '\u041D\u0435\u0432\u0435\u0440\u043D\u044B\u0439 \u043F\u0440\u043E\u043C\u043E\u043A\u043E\u0434' });
+        }
+
+        if (promo.used_by.includes(userId)) {
+            await client.query('ROLLBACK');
+            return res.status(400).json({ success: false, error: '\u0412\u044B \u0443\u0436\u0435 \u0438\u0441\u043F\u043E\u043B\u044C\u0437\u043E\u0432\u0430\u043B\u0438 \u044D\u0442\u043E\u0442 \u043F\u0440\u043E\u043C\u043E\u043A\u043E\u0434' });
+        }
+
+        if (promo.max_usages > 0 && promo.used_by.length >= promo.max_usages) {
+            await client.query('ROLLBACK');
+            return res.status(400).json({ success: false, error: '\u042D\u0442\u043E\u0442 \u043F\u0440\u043E\u043C\u043E\u043A\u043E\u0434 \u0431\u043E\u043B\u044C\u0448\u0435 \u043D\u0435 \u0434\u0435\u0439\u0441\u0442\u0432\u0438\u0442\u0435\u043B\u0435\u043D (\u043B\u0438\u043C\u0438\u0442 \u0438\u0441\u0447\u0435\u0440\u043F\u0430\u043D)' });
+        }
+
+        const reward = Number(promo.reward);
+        await client.query('UPDATE promocodes SET used_by = array_append(used_by, $2) WHERE code = $1 AND NOT ($2 = ANY(used_by))', [upperCode, userId]);
+        const balRes = await client.query(`
+            INSERT INTO balances (user_id, balance) VALUES ($1, $2)
+            ON CONFLICT (user_id) DO UPDATE SET balance = ROUND((balances.balance + $2)::numeric, 2)
+            RETURNING balance
+        `, [userId, reward]);
+
+        await client.query('COMMIT');
+
+        const newBalance = Number(balRes.rows[0].balance);
+        await logTransaction({
+            id: `promo_${upperCode}_${userId}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+            userId: userId,
+            amount: reward,
+            type: 'promo',
+            payload: upperCode
+        });
+
+        res.json({ success: true, newBalance, reward });
+    } catch (e) {
+        await client.query('ROLLBACK');
+        console.error('Promo activate error:', e);
+        res.status(500).json({ error: 'Internal error' });
+    } finally {
+        client.release();
     }
-
-    if (promo.used_by.includes(userId)) {
-        return res.status(400).json({ success: false, error: '\u0412\u044B \u0443\u0436\u0435 \u0438\u0441\u043F\u043E\u043B\u044C\u0437\u043E\u0432\u0430\u043B\u0438 \u044D\u0442\u043E\u0442 \u043F\u0440\u043E\u043C\u043E\u043A\u043E\u0434' });
-    }
-
-    if (promo.max_usages > 0 && promo.used_by.length >= promo.max_usages) {
-        return res.status(400).json({ success: false, error: '\u042D\u0442\u043E\u0442 \u043F\u0440\u043E\u043C\u043E\u043A\u043E\u0434 \u0431\u043E\u043B\u044C\u0448\u0435 \u043D\u0435 \u0434\u0435\u0439\u0441\u0442\u0432\u0438\u0442\u0435\u043B\u0435\u043D (\u043B\u0438\u043C\u0438\u0442 \u0438\u0441\u0447\u0435\u0440\u043F\u0430\u043D)' });
-    }
-
-    const reward = Number(promo.reward);
-    const newBalance = await updateBalance(userId, reward);
-    await usePromo(upperCode, userId);
-
-    await logTransaction({
-        id: `promo_${upperCode}_${userId}_${Date.now()}`,
-        userId: userId,
-        amount: reward,
-        type: 'promo',
-        payload: upperCode
-    });
-
-    res.json({ success: true, newBalance, reward });
 });
 
 app.post('/api/create-invoice', requireAuth, async (req, res) => {
