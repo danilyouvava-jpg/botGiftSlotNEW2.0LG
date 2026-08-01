@@ -40,6 +40,9 @@ const app = express();
 const bot = new Telegraf(token);
 const PORT = process.env.PORT || 3002;
 
+// Trust the first proxy hop (Railway LB) so req.ip reflects the real client IP
+app.set('trust proxy', 1);
+
 app.use(cors({ origin: process.env.NODE_ENV === 'production' ? CASINO_URL : true }));
 app.use(express.json());
 app.use(express.static(path.join(__dirname, 'dist')));
@@ -655,22 +658,29 @@ app.post('/api/roulette/claim', requireAuth, async (req, res) => {
     }
 });
 
-app.post('/api/game/transaction', requireAuth, async (req, res) => {
-    const { userId, amount } = req.body;
-    const authId = process.env.NODE_ENV === 'production' ? req.authUserId : userId;
-    if (authId !== userId) return res.status(403).json({ error: 'Forbidden' });
-    if (!userId || typeof amount !== 'number') {
-        return res.status(400).json({ error: 'Invalid params' });
+// Server-side state for Obeziana sticky planes (locked cells)
+// Trusted source: never accept grid/locked cells from the client.
+const lockedCellsByUser = new Map();
+
+function computeNewLocks(theme, prevLocks, finalGrid) {
+    if (theme !== 'obeziana') return [];
+
+    const currentPlanes = [];
+    finalGrid.forEach((row, r) => row.forEach((cell, c) => {
+        if (cell.type === slotMath.SymbolType.PLANE) currentPlanes.push({ r, c });
+    }));
+    const newCount = currentPlanes.length;
+    const prevCount = prevLocks.length;
+
+    if (newCount >= 3) return [];
+    if (newCount > prevCount && newCount > 0) {
+        return currentPlanes.map(p => ({ ...p, life: 1 }));
     }
-    if (Math.abs(amount) > 500) {
-        return res.status(400).json({ error: 'Transaction too large' });
-    }
-    const newBalance = await updateBalance(userId, amount);
-    res.json({ balance: newBalance });
-});
+    return prevLocks.map(p => ({ ...p, life: p.life - 1 })).filter(p => p.life > 0);
+}
 
 app.post('/api/game/spin', requireAuth, async (req, res) => {
-    const { userId, bet, theme, lockedCells, currentGrid } = req.body;
+    const { userId, bet, theme } = req.body;
     const authId = process.env.NODE_ENV === 'production' ? req.authUserId : userId;
     if (authId !== userId) return res.status(403).json({ error: 'Forbidden' });
 
@@ -703,7 +713,10 @@ app.post('/api/game/spin', requireAuth, async (req, res) => {
             [bet, userId]
         );
 
-        const result = slotMath.runSpin(bet, spinTheme, lockedCells, currentGrid);
+        const lockedCells = lockedCellsByUser.get(userId) || [];
+        const result = slotMath.runSpin(bet, spinTheme, lockedCells, null);
+
+        lockedCellsByUser.set(userId, computeNewLocks(spinTheme, lockedCells, result.grid));
 
         let totalWin = result.winAmount;
         if (result.bonus) {
