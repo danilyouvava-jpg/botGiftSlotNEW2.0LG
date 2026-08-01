@@ -208,7 +208,15 @@ async function initDB() {
                 reward NUMERIC DEFAULT 0,
                 currency TEXT DEFAULT 'STARS',
                 used_by BIGINT[] DEFAULT '{}',
-                max_usages INT DEFAULT 0
+                max_usages INT DEFAULT 0,
+                min_donation NUMERIC DEFAULT 0
+            );
+        `);
+        await client.query("ALTER TABLE promocodes ADD COLUMN IF NOT EXISTS min_donation NUMERIC DEFAULT 0");
+        await client.query(`
+            CREATE TABLE IF NOT EXISTS donations (
+                user_id BIGINT PRIMARY KEY,
+                total_donated NUMERIC DEFAULT 0
             );
         `);
         console.log('Database tables initialized');
@@ -494,6 +502,13 @@ bot.on('successful_payment', async (ctx) => {
             [userId, amount]
         );
 
+        // Track lifetime donations (needed for min_donation promo codes)
+        await client.query(
+            `INSERT INTO donations (user_id, total_donated) VALUES ($1, $2)
+             ON CONFLICT (user_id) DO UPDATE SET total_donated = ROUND((donations.total_donated + $2)::numeric, 2)`,
+            [userId, amount]
+        );
+
         await client.query('COMMIT');
         const newBalance = Number(balRes.rows[0].balance);
 
@@ -579,27 +594,32 @@ bot.command('addpromo', async (ctx) => {
     const code = (args[0] || '').toUpperCase();
     const reward = parseFloat(args[1]);
     const maxUsages = args[2] !== undefined ? parseInt(args[2], 10) : 0;
+    const minDonation = args[3] !== undefined ? parseFloat(args[3]) : 0;
 
     if (!code || !/^[A-Za-z0-9_-]+$/.test(code) || !isFinite(reward) || reward <= 0 || reward > 100000) {
-        return ctx.reply('\u0424\u043E\u0440\u043C\u0430\u0442: /addpromo CODE AMOUNT [MAX_USAGES]\n\u041F\u0440\u0438\u043C\u0435\u0440: /addpromo NEWBONUS 10 5\n(MAX_USAGES = 0 \u2014 \u0431\u0435\u0437 \u043B\u0438\u043C\u0438\u0442\u0430)').catch(() => { });
+        return ctx.reply('\u0424\u043E\u0440\u043C\u0430\u0442: /addpromo CODE AMOUNT [MAX_USAGES] [MIN_DONATION]\n\u041F\u0440\u0438\u043C\u0435\u0440: /addpromo NEWBONUS 10 5\n\u041F\u0440\u0438\u043C\u0435\u0440 (\u0442\u043E\u043B\u044C\u043A\u043E \u0434\u043B\u044F \u0434\u043E\u043D\u0430\u0442\u0435\u0440\u043E\u0432): /addpromo VIP 10 0 15\n(MAX_USAGES = 0 \u2014 \u0431\u0435\u0437 \u043B\u0438\u043C\u0438\u0442\u0430, MIN_DONATION = 0 \u2014 \u0431\u0435\u0437 \u043E\u0433\u0440\u0430\u043D\u0438\u0447\u0435\u043D\u0438\u0439)').catch(() => { });
     }
     if (isNaN(maxUsages) || maxUsages < 0) {
         return ctx.reply('MAX_USAGES \u0434\u043E\u043B\u0436\u0435\u043D \u0431\u044B\u0442\u044C >= 0').catch(() => { });
     }
+    if (!isFinite(minDonation) || minDonation < 0) {
+        return ctx.reply('MIN_DONATION \u0434\u043E\u043B\u0436\u0435\u043D \u0431\u044B\u0442\u044C >= 0').catch(() => { });
+    }
 
     try {
         const res = await pool.query(`
-            INSERT INTO promocodes (code, reward, currency, used_by, max_usages)
-            VALUES ($1, $2, 'STARS', '{}', $3)
-            ON CONFLICT (code) DO UPDATE SET reward = $2, max_usages = $3
+            INSERT INTO promocodes (code, reward, currency, used_by, max_usages, min_donation)
+            VALUES ($1, $2, 'STARS', '{}', $3, $4)
+            ON CONFLICT (code) DO UPDATE SET reward = $2, max_usages = $3, min_donation = $4
             RETURNING code
-        `, [code, reward, maxUsages]);
+        `, [code, reward, maxUsages, minDonation]);
 
         const existing = await getPromo(code);
         const usedCount = (existing?.used_by || []).length;
         const limitText = maxUsages === 0 ? '\u0431\u0435\u0437 \u043B\u0438\u043C\u0438\u0442\u0430' : `${maxUsages}`;
+        const donationText = minDonation > 0 ? `\u{1F4B5} \u041D\u0430\u0436\u0438\u043C\u0430\u0435\u0442\u0441\u044F \u0442\u043E\u043B\u044C\u043A\u043E \u0437\u0430 \u0434\u043E\u043D\u0430\u0442\u044B \u043E\u0442 ${minDonation} \u0437\u0432\u0451\u0437\u0434 \u0437\u0430 \u0432\u0441\u0451 \u0432\u0440\u0435\u043C\u044F` : '\u0414\u043B\u044F \u0432\u0441\u0435\u0445 \u043F\u043E\u043B\u044C\u0437\u043E\u0432\u0430\u0442\u0435\u043B\u0435\u0439';
 
-        await ctx.reply(`\u2705 \u041F\u0440\u043E\u043C\u043E\u043A\u043E\u0434 ${res.rows[0].code} \u0441\u043E\u0445\u0440\u0430\u043D\u0451\u043D:\n\u2B50 ${reward} \u0437\u0432\u0451\u0437\u0434\n\u{1F4CA} \u041B\u0438\u043C\u0438\u0442: ${limitText}\n\u{1F503} \u0423\u0436\u0435 \u0438\u0441\u043F\u043E\u043B\u044C\u0437\u043E\u0432\u0430\u043D: ${usedCount}`).catch(() => { });
+        await ctx.reply(`\u2705 \u041F\u0440\u043E\u043C\u043E\u043A\u043E\u0434 ${res.rows[0].code} \u0441\u043E\u0445\u0440\u0430\u043D\u0451\u043D:\n\u2B50 ${reward} \u0437\u0432\u0451\u0437\u0434\n\u{1F4CA} \u041B\u0438\u043C\u0438\u0442: ${limitText}\n\u{1F503} \u0423\u0436\u0435 \u0438\u0441\u043F\u043E\u043B\u044C\u0437\u043E\u0432\u0430\u043D: ${usedCount}\n\u{1F4B5} ${donationText}`).catch(() => { });
     } catch (e) {
         console.error('addpromo error:', e);
         await ctx.reply('\u274C \u041E\u0448\u0438\u0431\u043A\u0430 \u043F\u0440\u0438 \u0441\u043E\u0445\u0440\u0430\u043D\u0435\u043D\u0438\u0438 \u043F\u0440\u043E\u043C\u043E\u043A\u043E\u0434\u0430').catch(() => { });
@@ -632,7 +652,7 @@ bot.command(['promos', 'promoinfo'], async (ctx) => {
 
     try {
         const res = await pool.query(
-            'SELECT code, reward, currency, used_by, max_usages FROM promocodes ORDER BY code'
+            'SELECT code, reward, currency, used_by, max_usages, min_donation FROM promocodes ORDER BY code'
         );
         if (res.rows.length === 0) {
             return ctx.reply('\u041F\u0440\u043E\u043C\u043E\u043A\u043E\u0434\u043E\u0432 \u043F\u043E\u043A\u0430 \u043D\u0435\u0442').catch(() => { });
@@ -642,7 +662,8 @@ bot.command(['promos', 'promoinfo'], async (ctx) => {
             const used = (p.used_by || []).length;
             const limit = p.max_usages === 0 ? '\u221E' : String(p.max_usages);
             const left = p.max_usages === 0 ? '\u221E' : Math.max(0, p.max_usages - used);
-            return `<code>${escapeHtml(p.code)}</code> \u2014 ${p.reward} \u2B50 | \u0438\u0441\u043F\u043E\u043B\u044C\u0437\u043E\u0432\u0430\u043D: ${used}/${limit} (\u043E\u0441\u0442\u0430\u043B\u043E\u0441\u044C: ${left})`;
+            const donReq = Number(p.min_donation || 0) > 0 ? ` | \u{1F4B5} \u0434\u043E\u043D\u0430\u0442 \u2265${p.min_donation}` : '';
+            return `<code>${escapeHtml(p.code)}</code> \u2014 ${p.reward} \u2B50 | \u0438\u0441\u043F\u043E\u043B\u044C\u0437\u043E\u0432\u0430\u043D: ${used}/${limit} (\u043E\u0441\u0442\u0430\u043B\u043E\u0441\u044C: ${left})${donReq}`;
         });
 
         await ctx.reply(`\u{1F4CB} \u041F\u0440\u043E\u043C\u043E\u043A\u043E\u0434\u044B (${res.rows.length}):\n\n${lines.join('\n')}`, { parse_mode: 'HTML' }).catch(() => { });
@@ -1024,6 +1045,16 @@ app.post('/api/promocode/activate', requireAuth, async (req, res) => {
         if (promo.max_usages > 0 && usedByStr.length >= promo.max_usages) {
             await client.query('ROLLBACK');
             return res.status(400).json({ success: false, error: '\u042D\u0442\u043E\u0442 \u043F\u0440\u043E\u043C\u043E\u043A\u043E\u0434 \u0431\u043E\u043B\u044C\u0448\u0435 \u043D\u0435 \u0434\u0435\u0439\u0441\u0442\u0432\u0438\u0442\u0435\u043B\u0435\u043D (\u043B\u0438\u043C\u0438\u0442 \u0438\u0441\u0447\u0435\u0440\u043F\u0430\u043D)' });
+        }
+
+        const minDonation = Number(promo.min_donation || 0);
+        if (minDonation > 0) {
+            const donRes = await client.query('SELECT total_donated FROM donations WHERE user_id = $1', [userId]);
+            const totalDonated = donRes.rows.length > 0 ? Number(donRes.rows[0].total_donated) : 0;
+            if (totalDonated < minDonation) {
+                await client.query('ROLLBACK');
+                return res.status(400).json({ success: false, error: `\u0414\u0430\u043D\u043D\u044B\u0439 \u043F\u0440\u043E\u043C\u043E\u043A\u043E\u0434 \u0442\u043E\u043B\u044C\u043A\u043E \u0434\u043B\u044F \u043F\u043E\u0434\u0434\u0435\u0440\u0436\u0438\u0432\u0448\u0438\u0445 \u043F\u0440\u043E\u0435\u043A\u0442 (\u0434\u043E\u043D\u0430\u0442 \u043E\u0442 ${minDonation} \u0437\u0432\u0451\u0437\u0434 \u0437\u0430 \u0432\u0441\u0451 \u0432\u0440\u0435\u043C\u044F)` });
+            }
         }
 
         const reward = Number(promo.reward);
