@@ -584,21 +584,7 @@ app.get('/api/balance/:userId', requireAuth, async (req, res) => {
         const userId = parseInt(req.params.userId);
         const authId = process.env.NODE_ENV === 'production' ? req.authUserId : userId;
         if (authId !== userId) return res.status(403).json({ error: 'Forbidden' });
-
-        let balance = await getBalance(userId);
-
-        if (balance === 0) {
-            const existing = await pool.query('SELECT user_id FROM balances WHERE user_id = $1', [userId]);
-            if (existing.rows.length === 0) {
-                const WELCOME_BONUS = 50;
-                await pool.query(
-                    'INSERT INTO balances (user_id, balance) VALUES ($1, $2) ON CONFLICT (user_id) DO NOTHING',
-                    [userId, WELCOME_BONUS]
-                );
-                balance = WELCOME_BONUS;
-            }
-        }
-
+        const balance = await getBalance(userId);
         res.json({ stars: balance });
     } catch (e) {
         res.status(500).json({ error: 'Internal error' });

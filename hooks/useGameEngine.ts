@@ -9,6 +9,27 @@ function authHeaders(): Record<string, string> {
     } catch { return {}; }
 }
 
+function generateDummyGrid(rows: number, cols: number, theme: ThemeId): SymbolData[][] {
+    const byTheme: Record<ThemeId, SymbolType[]> = {
+        durov: [SymbolType.SHIELD, SymbolType.BOT, SymbolType.STAR, SymbolType.GIFT, SymbolType.HASH, SymbolType.NUM, SymbolType.DIAMOND],
+        flour: [SymbolType.SHIELD, SymbolType.BOT, SymbolType.STAR, SymbolType.GIFT, SymbolType.HASH, SymbolType.NUM, SymbolType.DIAMOND],
+        obeziana: [SymbolType.SHIELD, SymbolType.BOT, SymbolType.STAR, SymbolType.GIFT, SymbolType.HASH, SymbolType.NUM, SymbolType.DIAMOND, SymbolType.PLANE],
+    };
+    const pool = byTheme[theme] || byTheme.durov;
+    const g: SymbolData[][] = [];
+    for (let r = 0; r < rows; r++) {
+        g[r] = [];
+        for (let c = 0; c < cols; c++) {
+            g[r][c] = {
+                id: `init_${r}_${c}`,
+                type: pool[Math.floor(Math.random() * pool.length)],
+                isLocked: false
+            };
+        }
+    }
+    return g;
+}
+
 const REEL_DELAY = 150;
 const MIN_SPIN_TIME = 800;
 
@@ -43,11 +64,7 @@ export const useGameEngine = ({
   cols = COLS,
   userId
 }: UseGameEngineProps) => {
-  const [grid, setGrid] = useState<SymbolData[][]>(() => {
-    const g: SymbolData[][] = [];
-    for (let r = 0; r < rows; r++) { g[r] = []; for (let c = 0; c < cols; c++) g[r][c] = { id: `init_${r}_${c}`, type: SymbolType.SHIELD, isLocked: false }; }
-    return g;
-  });
+  const [grid, setGrid] = useState<SymbolData[][]>(() => generateDummyGrid(rows, cols, theme));
   const [gameState, setGameState] = useState<GameState>(GameState.IDLE);
   const [winData, setWinData] = useState<{ winAmount: number, winningLines: { row: number, col: number }[] } | null>(null);
   const [bonusSpins, setBonusSpins] = useState(3);
