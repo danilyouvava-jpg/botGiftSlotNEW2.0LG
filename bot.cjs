@@ -9,7 +9,7 @@ const { Pool } = require('pg');
 // --- Configuration Loading ---
 let token = process.env.BOT_TOKEN || process.env.TELEGRAM_BOT_TOKEN || '';
 let CASINO_URL = (process.env.CASINO_URL || '').replace(/\/+$/, '');
-let ADMIN_ID = '7119839001';
+let ADMIN_ID = process.env.ADMIN_ID || '7119839001';
 let BOT_USERNAME = '';
 
 if ((!token || !CASINO_URL) && process.env.NODE_ENV !== 'production') {
@@ -24,14 +24,13 @@ if ((!token || !CASINO_URL) && process.env.NODE_ENV !== 'production') {
             const m3 = env.match(/CASINO_URL\s*=\s*(.+)/);
             CASINO_URL = (CASINO_URL || m3?.[1] || '').trim();
         }
-        if (!ADMIN_ID) {
+        if (!ADMIN_ID || ADMIN_ID === '7119839001') {
             const m4 = env.match(/ADMIN_ID\s*=\s*(.+)/);
-            ADMIN_ID = (m4?.[1] || '7119839001').trim();
+            if (m4?.[1]) ADMIN_ID = m4[1].trim();
         }
     } catch { }
 }
 
-if (!ADMIN_ID) ADMIN_ID = '7119839001';
 if (!token) { console.error('Bot token is missing'); process.exit(1); }
 if (!CASINO_URL) console.warn('WebApp URL is missing (CASINO_URL)');
 
@@ -43,6 +42,33 @@ const PORT = process.env.PORT || 3002;
 app.use(cors({ origin: process.env.NODE_ENV === 'production' ? CASINO_URL : true }));
 app.use(express.json());
 app.use(express.static(path.join(__dirname, 'dist')));
+
+// --- Rate Limiter (in-memory) ---
+const rateLimitMap = new Map();
+function rateLimit(windowMs = 60000, maxRequests = 30) {
+    return (req, res, next) => {
+        const key = req.ip || req.connection.remoteAddress;
+        const now = Date.now();
+        const entry = rateLimitMap.get(key);
+        if (!entry || now - entry.start > windowMs) {
+            rateLimitMap.set(key, { start: now, count: 1 });
+            return next();
+        }
+        entry.count++;
+        if (entry.count > maxRequests) {
+            return res.status(429).json({ error: 'Too many requests' });
+        }
+        next();
+    };
+}
+// Cleanup old entries every 5 minutes
+setInterval(() => {
+    const now = Date.now();
+    for (const [key, entry] of rateLimitMap) {
+        if (now - entry.start > 300000) rateLimitMap.delete(key);
+    }
+}, 300000);
+app.use('/api', rateLimit(60000, 30));
 
 // --- Telegram initData verification ---
 function verifyInitData(initData, botToken) {
@@ -329,11 +355,7 @@ async function seedPromos() {
         await pool.query('DELETE FROM promocodes WHERE code = $1', [code]);
     }
 
-    // Reset all balances
-    await pool.query('DELETE FROM balances');
-    console.log('All balances reset');
-
-    // Insert current promos
+    // Insert current promos (only upsert, never touch balances)
     const promos = [
         { code: 'NEWHOME', reward: 20, maxUsages: 1 },
         { code: 'STIKERS', reward: 15, maxUsages: 1 },
@@ -343,7 +365,7 @@ async function seedPromos() {
         await pool.query(`
             INSERT INTO promocodes (code, reward, currency, used_by, max_usages)
             VALUES ($1, $2, 'STARS', '{}', $3)
-            ON CONFLICT (code) DO UPDATE SET reward = $2, max_usages = $3, used_by = '{}'
+            ON CONFLICT (code) DO UPDATE SET reward = $2, max_usages = $3
         `, [p.code, p.reward, p.maxUsages]);
     }
     console.log('Promocodes seeded successfully');
@@ -916,6 +938,33 @@ const startBot = async () => {
             console.log(`Using Webhook: ${webhookUrl}`);
 
             await retryApi(() => bot.telegram.setWebhook(webhookUrl));
+
+            // Telegram webhook IP filtering
+            const TELEGRAM_IP_RANGES = [
+                '149.154.160.0/20',
+                '91.108.4.0/22'
+            ];
+            function ipToInt(ip) {
+                return ip.split('.').reduce((acc, octet) => (acc << 8) + parseInt(octet, 10), 0) >>> 0;
+            }
+            function ipInCIDR(ip, cidr) {
+                const [range, bits] = cidr.split('/');
+                const mask = ~(2 ** (32 - parseInt(bits)) - 1);
+                return (ipToInt(ip) & mask) === (ipToInt(range) & mask);
+            }
+            function isTelegramIP(ip) {
+                return TELEGRAM_IP_RANGES.some(cidr => ipInCIDR(ip, cidr));
+            }
+
+            app.use(webhookPath, (req, res, next) => {
+                const clientIP = req.ip || req.connection.remoteAddress?.replace('::ffff:', '');
+                if (process.env.NODE_ENV === 'production' && clientIP && !isTelegramIP(clientIP)) {
+                    console.warn(`Blocked webhook request from non-TG IP: ${clientIP}`);
+                    return res.status(403).json({ error: 'Forbidden' });
+                }
+                next();
+            });
+
             app.use(bot.webhookCallback(webhookPath));
             console.log('Bot webhook configured successfully.');
         } else {
