@@ -1179,30 +1179,9 @@ const startBot = async () => {
             // Secret token protects the webhook from forgery (recommended by Telegram)
             await retryApi(() => bot.telegram.setWebhook(webhookUrl, { secret_token: webhookSecret }));
 
-            // Telegram webhook IP filtering (official ranges from core.telegram.org/resources/cidr.txt)
-            const TELEGRAM_IP_RANGES = [
-                '149.154.160.0/20',
-                '91.108.4.0/22',
-                '91.108.8.0/22',
-                '91.108.12.0/22',
-                '91.108.16.0/22',
-                '91.108.20.0/22',
-                '91.108.56.0/22',
-                '91.105.192.0/23',
-                '185.76.151.0/24'
-            ];
-            function ipToInt(ip) {
-                return ip.split('.').reduce((acc, octet) => (acc << 8) + parseInt(octet, 10), 0) >>> 0;
-            }
-            function ipInCIDR(ip, cidr) {
-                const [range, bits] = cidr.split('/');
-                const mask = ~(2 ** (32 - parseInt(bits)) - 1);
-                return (ipToInt(ip) & mask) === (ipToInt(range) & mask);
-            }
-            function isTelegramIP(ip) {
-                return TELEGRAM_IP_RANGES.some(cidr => ipInCIDR(ip, cidr));
-            }
-
+            // NOTE: IP filtering was removed - Telegram delivers webhooks from non-official
+            // ranges (e.g. datapacket 152.233.x) and secret_token validation is the
+            // cryptographically secure protection.
             app.use(webhookPath, (req, res, next) => {
                 const clientIP = req.ip || req.connection.remoteAddress?.replace('::ffff:', '');
                 const sentToken = req.headers['x-telegram-bot-api-secret-token'];
@@ -1212,10 +1191,6 @@ const startBot = async () => {
                     crypto.timingSafeEqual(Buffer.from(sentToken), secretBuf);
                 if (process.env.NODE_ENV === 'production' && !tokenValid) {
                     console.warn(`Blocked webhook request with invalid secret token from: ${clientIP}`);
-                    return res.status(403).json({ error: 'Forbidden' });
-                }
-                if (process.env.NODE_ENV === 'production' && clientIP && !isTelegramIP(clientIP)) {
-                    console.warn(`Blocked webhook request from non-TG IP: ${clientIP}`);
                     return res.status(403).json({ error: 'Forbidden' });
                 }
                 next();
@@ -1244,5 +1219,5 @@ app.listen(PORT, () => {
     console.log(`API Server running on port ${PORT}`);
 });
 
-process.once('SIGINT', () => bot.stop('SIGINT'));
-process.once('SIGTERM', () => bot.stop('SIGTERM'));
+process.once('SIGINT', () => { try { bot.stop('SIGINT'); } catch (e) { console.warn('bot.stop failed on SIGINT:', e.message); } });
+process.once('SIGTERM', () => { try { bot.stop('SIGTERM'); } catch (e) { console.warn('bot.stop failed on SIGTERM:', e.message); } });
