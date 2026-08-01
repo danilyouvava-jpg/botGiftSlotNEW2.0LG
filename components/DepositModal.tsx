@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { X, Wallet, Star, CreditCard, Check } from 'lucide-react';
+import { useI18n } from '../i18n';
 
 interface DepositModalProps {
   isOpen: boolean;
@@ -19,6 +20,7 @@ const PRESETS = {
 const WITHDRAW_PRESETS = [500, 1000, 2500, 5000, 10000];
 
 export default function DepositModal({ isOpen, onClose, onDeposit, onWithdraw, onActivatePromo, currentCurrency }: DepositModalProps) {
+  const { t } = useI18n();
   const [amount, setAmount] = useState<string>('');
   const [activeTab, setActiveTab] = useState<'deposit' | 'withdrawal' | 'promo'>('deposit');
   const [promoCode, setPromoCode] = useState('');
@@ -43,7 +45,7 @@ export default function DepositModal({ isOpen, onClose, onDeposit, onWithdraw, o
       if (value > 0) {
           const ok = await onDeposit(value, activeCurrency);
           if (ok) {
-              setSuccessMessage('Пополнение успешно!\nВаш баланс обновлен.');
+              setSuccessMessage(t('deposit_success'));
               setIsSuccess(true);
               setTimeout(() => {
                   onClose();
@@ -58,7 +60,7 @@ export default function DepositModal({ isOpen, onClose, onDeposit, onWithdraw, o
       if (value >= 500) {
           const ok = await onWithdraw?.(value) || false;
           if (ok) {
-              setSuccessMessage('Заявка отправлена!\nЗвезды скоро появятся на вашем счете в Gift подарке.');
+              setSuccessMessage(t('withdraw_success'));
               setIsSuccess(true);
               setTimeout(() => {
                   onClose();
@@ -73,7 +75,7 @@ export default function DepositModal({ isOpen, onClose, onDeposit, onWithdraw, o
       setPromoError('');
       const res = await onActivatePromo(promoCode);
       if (res.success) {
-          setSuccessMessage(res.message || 'Промокод активирован!');
+          setSuccessMessage(res.message || t('promo_success'));
           setIsSuccess(true);
           setTimeout(() => {
               onClose();
@@ -81,7 +83,7 @@ export default function DepositModal({ isOpen, onClose, onDeposit, onWithdraw, o
               setPromoCode('');
           }, 1500);
       } else {
-          setPromoError(res.message || 'Ошибка');
+          setPromoError(res.message || t('error'));
           setTimeout(() => setPromoError(''), 3000);
       }
   };
@@ -122,7 +124,7 @@ export default function DepositModal({ isOpen, onClose, onDeposit, onWithdraw, o
           <div className="flex items-center justify-between p-6 border-b border-white/5 bg-[#232e3c]">
             <h2 className="text-xl font-bold text-white flex items-center gap-2">
               <CreditCard className="text-blue-400" />
-              Кошелек
+              {t('wallet')}
             </h2>
             <button 
               onClick={onClose}
@@ -142,7 +144,7 @@ export default function DepositModal({ isOpen, onClose, onDeposit, onWithdraw, o
                       : 'text-gray-500 hover:text-gray-300'
                   }`}
               >
-                  Пополнение
+                  {t('deposit_tab')}
               </button>
               <button
                   onClick={() => setActiveTab('withdrawal')}
@@ -152,7 +154,7 @@ export default function DepositModal({ isOpen, onClose, onDeposit, onWithdraw, o
                       : 'text-gray-500 hover:text-gray-300'
                   }`}
               >
-                  Вывод
+                  {t('withdraw_tab')}
               </button>
               <button
                   onClick={() => setActiveTab('promo')}
@@ -162,7 +164,7 @@ export default function DepositModal({ isOpen, onClose, onDeposit, onWithdraw, o
                       : 'text-gray-500 hover:text-gray-300'
                   }`}
               >
-                  Промо
+                  {t('promo_tab')}
               </button>
           </div>
 
@@ -194,7 +196,7 @@ export default function DepositModal({ isOpen, onClose, onDeposit, onWithdraw, o
                             type="number"
                             value={amount}
                             onChange={(e) => setAmount(e.target.value)}
-                            placeholder="Введите сумму"
+                            placeholder={t('enter_amount')}
                             className="w-full bg-black/20 border border-white/10 rounded-xl py-3 px-4 text-white placeholder-gray-500 focus:outline-none focus:border-blue-500 transition-colors font-mono"
                         />
                         <span className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-500 font-bold text-xs">
@@ -212,7 +214,7 @@ export default function DepositModal({ isOpen, onClose, onDeposit, onWithdraw, o
                             : (activeCurrency === 'TON' ? 'bg-blue-500 hover:bg-blue-600 text-white shadow-blue-500/25' : 'bg-yellow-500 hover:bg-yellow-600 text-white shadow-yellow-500/25')
                         }`}
                     >
-                        Оплатить {amount ? `${amount} ${activeCurrency}` : ''}
+                        {t('pay')} {amount ? `${amount} ${activeCurrency}` : ''}
                     </button>
 
                 </>
@@ -241,7 +243,7 @@ export default function DepositModal({ isOpen, onClose, onDeposit, onWithdraw, o
                             type="number"
                             value={amount}
                             onChange={(e) => setAmount(e.target.value)}
-                            placeholder="Введите сумму вывода"
+                            placeholder={t('enter_withdraw_amount')}
                             className="w-full bg-black/20 border border-white/10 rounded-xl py-3 px-4 text-white placeholder-gray-500 focus:outline-none focus:border-purple-500 transition-colors font-mono"
                         />
                         <span className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-500 font-bold text-xs">
@@ -250,7 +252,7 @@ export default function DepositModal({ isOpen, onClose, onDeposit, onWithdraw, o
                     </div>
 
                     <div className="text-xs text-gray-500 px-2">
-                        Минимальный вывод: 500 звезд
+                        {t('min_withdraw')}
                     </div>
 
                     {/* Action Button */}
@@ -263,7 +265,7 @@ export default function DepositModal({ isOpen, onClose, onDeposit, onWithdraw, o
                             : 'bg-purple-500 hover:bg-purple-600 text-white shadow-purple-500/25'
                         }`}
                     >
-                        Вывести {amount ? `${amount} STARS` : ''}
+                        {t('withdraw_btn')} {amount ? `${amount} STARS` : ''}
                     </button>
                 </>
             ) : (
@@ -273,10 +275,10 @@ export default function DepositModal({ isOpen, onClose, onDeposit, onWithdraw, o
                        <div className="bg-white/5 p-4 rounded-xl border border-white/10">
                            <h3 className="font-bold text-white mb-2 flex items-center gap-2">
                                <Star className="text-yellow-400" size={20} />
-                               Активация промокода
+                               {t('promo_title')}
                            </h3>
                            <p className="text-sm text-gray-400 mb-4">
-                               Введите промокод, чтобы получить бонусные звезды на счет.
+                               {t('promo_hint')}
                            </p>
                            
                            <div className="relative">
@@ -284,7 +286,7 @@ export default function DepositModal({ isOpen, onClose, onDeposit, onWithdraw, o
                                    type="text"
                                    value={promoCode}
                                    onChange={(e) => setPromoCode(e.target.value)}
-                                   placeholder="Введите промокод"
+                                   placeholder={t('enter_promo')}
                                    className="w-full bg-black/20 border border-white/10 rounded-xl py-3 px-4 text-white placeholder-gray-500 focus:outline-none focus:border-yellow-500 transition-colors font-mono uppercase"
                                />
                            </div>
@@ -299,7 +301,7 @@ export default function DepositModal({ isOpen, onClose, onDeposit, onWithdraw, o
                                 : 'bg-yellow-500 hover:bg-yellow-600 text-white shadow-yellow-500/25 active:scale-95'
                             }`}
                         >
-                            Активировать
+                            {t('activate')}
                         </button>
 
                         {promoError && (

@@ -4,6 +4,7 @@ import { SymbolData, GameState } from '../types';
 import { ThemeId } from '../constants';
 import BonusOverlay from './BonusOverlay';
 import GameColumn from './GameColumn';
+import { useI18n } from '../i18n';
 
 interface GameGridProps {
   grid: SymbolData[][];
@@ -30,6 +31,7 @@ const GameGrid: React.FC<GameGridProps> = ({
   currentTheme,
   currency
 }) => {
+  const { t } = useI18n();
   const isBonus = gameState === GameState.BONUS_ACTIVE || gameState === GameState.BONUS_TRANSITION || gameState === GameState.BONUS_PAYOUT;
   
   const cols = grid[0]?.length || 5;
@@ -106,7 +108,7 @@ const GameGrid: React.FC<GameGridProps> = ({
         >
             <div className="bg-gradient-to-br from-yellow-500 to-orange-600 p-[2px] rounded-2xl shadow-[0_0_50px_rgba(255,165,0,0.6)]">
                 <div className="bg-[#17212b] px-10 py-6 rounded-2xl flex flex-col items-center border border-white/10">
-                    <span className="text-yellow-400 font-black uppercase text-2xl tracking-widest drop-shadow-md">Большой Выигрыш</span>
+                    <span className="text-yellow-400 font-black uppercase text-2xl tracking-widest drop-shadow-md">{t('big_win')}</span>
                     <span className="text-5xl font-bold text-white mt-2 drop-shadow-lg tracking-tighter">{winData?.winAmount.toFixed(2)}</span>
                 </div>
             </div>
@@ -126,7 +128,7 @@ const GameGrid: React.FC<GameGridProps> = ({
                     initial={{ scale: 0 }} animate={{ scale: 1 }} 
                     className="text-2xl font-bold text-white mb-2"
                 >
-                    Бонус Собран
+                    {t('bonus_collected')}
                 </motion.div>
                 <motion.div 
                     initial={{ y: 20, opacity: 0 }} animate={{ y: 0, opacity: 1 }} delay={0.2}

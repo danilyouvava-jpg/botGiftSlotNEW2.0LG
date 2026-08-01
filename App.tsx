@@ -10,8 +10,9 @@ import DepositModal from './components/DepositModal';
 import ReferralModal from './components/ReferralModal';
 import DailyRouletteModal from './components/DailyRouletteModal';
 import { ErrorBoundary } from './components/ErrorBoundary';
-import { Loader2, Wallet, X, Volume2, VolumeX, Settings, Info, Zap, Star, Plus, ChevronLeft, ChevronRight, Box, Users, Gift } from 'lucide-react';
+import { Loader2, Wallet, X, Volume2, VolumeX, Settings, Info, Zap, Star, Plus, ChevronLeft, ChevronRight, Box, Users, Gift, Languages } from 'lucide-react';
 import { useGameEngine } from './hooks/useGameEngine';
+import { useI18n } from './i18n';
 import pako from 'pako'; // For preloading Lotties if needed
 
 function getTelegramInitData(): string | undefined {
@@ -39,6 +40,7 @@ const PRELOADED = {
 };
 
 export default function App() {
+    const { lang, setLang, t } = useI18n();
     // Preload Images and Lotties
     useEffect(() => {
         if (typeof window === 'undefined') return;
@@ -228,7 +230,7 @@ export default function App() {
     };
 
     const handleActivatePromo = async (code: string) => {
-        if (!userId) return { success: false, message: 'User not found' };
+        if (!userId) return { success: false, message: t('error') };
         try {
             const resp = await fetch('/api/promocode/activate', {
                 method: 'POST',
@@ -238,13 +240,13 @@ export default function App() {
             const data = await resp.json();
             if (data.success) {
                 setStarsBalance(data.newBalance);
-                return { success: true, message: 'Промокод активирован!', reward: data.reward };
+                return { success: true, message: t('promo_success'), reward: data.reward };
             } else {
-                return { success: false, message: data.error || 'Ошибка активации' };
+                return { success: false, message: data.error || t('error') };
             }
         } catch (e) {
             console.error('Promo activation error', e);
-            return { success: false, message: 'Ошибка сети' };
+            return { success: false, message: t('error') };
         }
     };
 
@@ -396,6 +398,14 @@ export default function App() {
                             <Gift size={18} className="text-gray-400" />
                         </button>
                         <button
+                            onClick={() => setLang(lang === 'ru' ? 'en' : 'ru')}
+                            title={t('lang_switch_title')}
+                            className="p-2 hover:bg-white/5 rounded-full flex items-center gap-1"
+                        >
+                            <Languages size={18} className="text-gray-400" />
+                            <span className="text-xs font-bold text-gray-400">{lang === 'ru' ? 'EN' : 'RU'}</span>
+                        </button>
+                        <button
                             className="p-2 hover:bg-white/5 rounded-full"
                             onClick={() => setIsMuted(!isMuted)}
                         >
@@ -418,7 +428,7 @@ export default function App() {
                             {currency === 'TON' ? <Wallet size={48} /> : <Star size={48} />}
                         </div>
                         <div className="flex justify-between items-start relative z-10">
-                            <span className="text-xs text-gray-400 font-medium uppercase tracking-wider">Общий баланс</span>
+                            <span className="text-xs text-gray-400 font-medium uppercase tracking-wider">{t('total_balance')}</span>
                             <button
                                 onClick={() => setShowDeposit(true)}
                                 className={`w-6 h-6 rounded-full flex items-center justify-center transition-colors ${currency === 'TON' ? 'bg-blue-500 hover:bg-blue-400' : 'bg-yellow-500 hover:bg-yellow-400'}`}
@@ -519,11 +529,11 @@ export default function App() {
                             {/* Header Info (Bet/Win) */}
                             <div className="flex justify-between items-center mb-4 px-2">
                                 <div className="glass-panel px-4 py-1.5 rounded-full flex items-center gap-2">
-                                    <span className="text-xs text-gray-400 uppercase">Ставка</span>
+                                    <span className="text-xs text-gray-400 uppercase">{t('bet')}</span>
                                     <span className="font-bold text-white">{bet}</span>
                                 </div>
                                 <div className="glass-panel px-4 py-1.5 rounded-full flex items-center gap-2">
-                                    <span className="text-xs text-gray-400 uppercase">Выигрыш</span>
+                                    <span className="text-xs text-gray-400 uppercase">{t('win')}</span>
                                     <span className="font-bold text-yellow-400">{winData ? winData.winAmount.toFixed(2) : '0.00'}</span>
                                 </div>
                             </div>
@@ -604,7 +614,7 @@ export default function App() {
                     <div className={`flex-1 ${currentTheme === 'obeziana' ? 'bg-[#2D2F23]' : 'glass-panel'} rounded-xl p-1 flex items-center justify-between px-2 relative`}>
                         {isBetLocked && (
                             <div className="absolute -top-8 left-1/2 transform -translate-x-1/2 bg-black/80 text-white text-[10px] px-2 py-1 rounded pointer-events-none whitespace-nowrap">
-                                Ставка заблокирована
+                                {t('bet_locked')}
                             </div>
                         )}
                         <button onClick={decreaseBet} disabled={isGameLocked || isBetLocked || bet <= currentBetValues[0]} className="w-8 h-8 rounded bg-white/5 text-blue-400 font-bold disabled:opacity-50">-</button>
@@ -643,9 +653,9 @@ export default function App() {
                `}
                     >
                         {isGameLocked ? (
-                            gameState === GameState.SPINNING ? <Loader2 className="animate-spin" /> : <span>Ждите...</span>
+                            gameState === GameState.SPINNING ? <Loader2 className="animate-spin" /> : <span>{t('wait')}</span>
                         ) : (
-                            'КРУТИТЬ'
+                            t('spin')
                         )}
                     </button>
                 </div>
@@ -655,7 +665,7 @@ export default function App() {
             <div className="hidden md:flex absolute bottom-8 left-[62%] -translate-x-1/2 z-40 gap-6 items-center">
                 {/* Bet Control */}
                 <div className="glass-panel rounded-full p-2 flex items-center gap-4 px-6 shadow-2xl transform hover:scale-105 transition-transform">
-                    <span className="text-gray-400 text-xs font-bold uppercase">Сумма ставки</span>
+                    <span className="text-gray-400 text-xs font-bold uppercase">{t('bet_amount')}</span>
                     <div className="flex items-center gap-3">
                         <button onClick={decreaseBet} disabled={isGameLocked || bet <= currentBetValues[0]} className="w-8 h-8 rounded-full bg-white/10 hover:bg-white/20 text-white flex items-center justify-center transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
                             -
@@ -705,7 +715,7 @@ export default function App() {
                     {gameState === GameState.SPINNING ? (
                         <Loader2 className="animate-spin" size={32} />
                     ) : (
-                        <span className="group-hover:animate-pulse">КРУТИТЬ</span>
+                        <span className="group-hover:animate-pulse">{t('spin')}</span>
                     )}
                 </button>
 

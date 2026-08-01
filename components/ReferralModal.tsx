@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { X, Users, Star } from 'lucide-react';
+import { useI18n } from '../i18n';
 
 function authHeaders(): Record<string, string> {
     try {
@@ -16,6 +17,7 @@ interface ReferralModalProps {
 }
 
 export default function ReferralModal({ isOpen, onClose, userId }: ReferralModalProps) {
+  const { t } = useI18n();
   const [referralStats, setReferralStats] = useState({ count: 0, earned: 0 });
   const [loading, setLoading] = useState(true);
 
@@ -54,7 +56,7 @@ export default function ReferralModal({ isOpen, onClose, userId }: ReferralModal
           <div className="flex items-center justify-between p-6 border-b border-white/5 bg-[#232e3c]">
             <h2 className="text-2xl font-bold text-white flex items-center gap-2">
               <Users className="text-blue-400" />
-              Реферальная система
+              {t('referral_title')}
             </h2>
             <button
               onClick={onClose}
@@ -68,22 +70,20 @@ export default function ReferralModal({ isOpen, onClose, userId }: ReferralModal
           <div className="p-6 grid grid-cols-2 gap-4 border-b border-white/5">
             <div className="bg-[#232e3c] rounded-2xl p-4 text-center">
               <div className="text-3xl font-bold text-white">{loading ? '...' : referralStats.count}</div>
-              <div className="text-gray-400 text-sm mt-1">Приглашено</div>
+              <div className="text-gray-400 text-sm mt-1">{t('invited')}</div>
             </div>
             <div className="bg-[#232e3c] rounded-2xl p-4 text-center">
               <div className="text-3xl font-bold text-yellow-400 flex items-center justify-center gap-1">
                 {loading ? '...' : referralStats.earned}
                 <Star size={20} className="fill-yellow-400" />
               </div>
-              <div className="text-gray-400 text-sm mt-1">Заработано</div>
+              <div className="text-gray-400 text-sm mt-1">{t('earned')}</div>
             </div>
           </div>
 
           {/* Info */}
           <div className="p-6 text-center">
-            <p className="text-gray-400 mb-4">
-              Приглашай друзей и получай <span className="text-yellow-400 font-bold">2 ⭐</span> за каждого!
-            </p>
+            <p className="text-gray-400 mb-4" dangerouslySetInnerHTML={{ __html: t('referral_hint') }} />
 
             <button
               className="w-full bg-[#0098ea] hover:bg-[#0098ea]/90 text-white font-bold py-3 px-6 rounded-xl transition-all active:scale-95 flex items-center justify-center gap-2"
@@ -117,7 +117,7 @@ export default function ReferralModal({ isOpen, onClose, userId }: ReferralModal
               }}
             >
               <Users size={20} />
-              Пригласить друга
+              {t('invite_friend')}
             </button>
           </div>
 

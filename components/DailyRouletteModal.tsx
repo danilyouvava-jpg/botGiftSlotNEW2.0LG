@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { X, Gift } from 'lucide-react';
+import { useI18n } from '../i18n';
 
 function authHeaders(): Record<string, string> {
     try {
@@ -35,6 +36,7 @@ const SEGMENT_COUNT = ROULETTE_SEGMENTS.length;
 const SEGMENT_ANGLE = 360 / SEGMENT_COUNT;
 
 export default function DailyRouletteModal({ isOpen, onClose, userId, onWin }: DailyRouletteModalProps) {
+    const { t } = useI18n();
     const [isSpinning, setIsSpinning] = useState(false);
     const [rotation, setRotation] = useState(0);
     const [wonPrize, setWonPrize] = useState<number | null>(null);
@@ -81,7 +83,7 @@ export default function DailyRouletteModal({ isOpen, onClose, userId, onWin }: D
             } else {
                 const hours = Math.floor(diff / (1000 * 60 * 60));
                 const minutes = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
-                setTimeLeft(`${hours}ч ${minutes.toString().padStart(2, '0')}м`);
+                setTimeLeft(t('time_left').replace('{h}', String(hours)).replace('{m}', String(minutes).padStart(2, '0')));
             }
         };
 
@@ -89,7 +91,7 @@ export default function DailyRouletteModal({ isOpen, onClose, userId, onWin }: D
         const interval = setInterval(updateTimer, 60000); // Update every minute is enough for hours/mins
 
         return () => clearInterval(interval);
-    }, [canSpin, nextSpinTime]);
+    }, [canSpin, nextSpinTime, t]);
 
     // Cleanup on unmount
     useEffect(() => {
@@ -189,7 +191,7 @@ export default function DailyRouletteModal({ isOpen, onClose, userId, onWin }: D
                     <div className="flex items-center justify-between p-4 border-b border-white/5 bg-[#232e3c]">
                         <h2 className="text-xl font-bold text-white flex items-center gap-2">
                             <Gift className="text-gray-400" />
-                            Ежедневная рулетка
+                            {t('roulette_title')}
                         </h2>
                         <button
                             onClick={onClose}
@@ -310,7 +312,7 @@ export default function DailyRouletteModal({ isOpen, onClose, userId, onWin }: D
                                 <div className="text-yellow-400 text-2xl font-bold flex items-center justify-center gap-2">
                                     +{wonPrize} <img src="/stars.png" alt="stars" className="w-10 h-10 object-contain" />
                                 </div>
-                                <div className="text-gray-400 text-sm">Начислено на баланс!</div>
+                                <div className="text-gray-400 text-sm">{t('credited')}</div>
                             </motion.div>
                         )}
 
@@ -325,7 +327,7 @@ export default function DailyRouletteModal({ isOpen, onClose, userId, onWin }: D
                                 }
                             `}
                         >
-                            {isSpinning ? 'Крутится...' : !canSpin ? `Доступно через ${timeLeft || '...'}` : 'КРУТИТЬ'}
+                            {isSpinning ? t('spinning') : !canSpin ? `${t('available_in')} ${timeLeft || '...'}` : t('spin')}
                         </button>
                     </div>
 

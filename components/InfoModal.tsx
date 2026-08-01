@@ -3,6 +3,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { X, Trophy, Zap, Star, Shield, Gift, Lock } from 'lucide-react';
 import { SYMBOL_CONFIG, THEME_IMAGES, ThemeId } from '../constants';
 import { SymbolType } from '../types';
+import { useI18n } from '../i18n';
 
 interface InfoModalProps {
   isOpen: boolean;
@@ -11,6 +12,7 @@ interface InfoModalProps {
 }
 
 export default function InfoModal({ isOpen, onClose, theme }: InfoModalProps) {
+  const { t } = useI18n();
   if (!isOpen) return null;
 
   return (
@@ -33,7 +35,7 @@ export default function InfoModal({ isOpen, onClose, theme }: InfoModalProps) {
           <div className="flex items-center justify-between p-6 border-b border-white/5 bg-[#232e3c]">
             <h2 className="text-2xl font-bold text-white flex items-center gap-2">
               <Trophy className="text-yellow-400" />
-              Правила и Выплаты
+              {t('rules_title')}
             </h2>
             <button 
               onClick={onClose}
@@ -48,48 +50,48 @@ export default function InfoModal({ isOpen, onClose, theme }: InfoModalProps) {
             
             {/* General Rules */}
             <section>
-              <h3 className="text-lg font-bold text-blue-400 mb-3 uppercase tracking-wider">Как играть</h3>
+              <h3 className="text-lg font-bold text-blue-400 mb-3 uppercase tracking-wider">{t('how_to_play')}</h3>
               <ul className="space-y-2 text-gray-300 text-sm">
                 {theme === 'obeziana' ? (
                   <>
                     <li className="flex gap-2">
                       <span className="text-blue-400">•</span>
-                      <span><strong>Цель:</strong> Соберите 3 одинаковых обезьяны в ряд, чтобы получить выигрыш.</span>
+                      <span dangerouslySetInnerHTML={{ __html: t('obez_goal') }} />
                     </li>
                     <li className="flex gap-2">
                       <span className="text-blue-400">•</span>
-                      <span><strong>Поле:</strong> Компактное поле 3x3 — идеально для быстрых побед.</span>
+                      <span dangerouslySetInnerHTML={{ __html: t('obez_field') }} />
                     </li>
                     <li className="flex gap-2">
                       <span className="text-blue-400">•</span>
-                      <span><strong>Символы:</strong> Каждая обезьяна имеет свою ценность. Чем реже символ, тем больше награда!</span>
+                      <span dangerouslySetInnerHTML={{ __html: t('obez_symbols') }} />
                     </li>
                     <li className="flex gap-2">
                       <span className="text-blue-400">•</span>
-                      <span><strong>Максимальный выигрыш:</strong> Поймайте 3 Горячию Обезьяну и умножте ставку в <strong>x20</strong> раз!</span>
+                      <span dangerouslySetInnerHTML={{ __html: t('obez_maxwin') }} />
                     </li>
                     <li className="flex gap-2">
                       <span className="text-blue-400">•</span>
-                      <span><strong>Стратегия:</strong> Играйте чаще — мелкие выигрыши выпадают постоянно, поддерживая баланс.</span>
+                      <span dangerouslySetInnerHTML={{ __html: t('obez_strategy') }} />
                     </li>
                   </>
                 ) : (
                   <>
                     <li className="flex gap-2">
                       <span className="text-blue-400">•</span>
-                      Соберите 3, 4 или 5 символов на линии для выигрыша.
+                      {t('rules_line')}
                     </li>
                     <li className="flex gap-2">
                       <span className="text-blue-400">•</span>
-                      Линии оплачиваются слева направо.
+                      {t('rules_ltr')}
                     </li>
                     <li className="flex gap-2">
                       <span className="text-blue-400">•</span>
-                      5+ Монет запускают Бонусную Игру.
+                      {t('rules_coins')}
                     </li>
                     <li className="flex gap-2">
                       <span className="text-blue-400">•</span>
-                      WILD заменяет любой символ, кроме Бонусных Монет.
+                      {t('rules_wild')}
                     </li>
                   </>
                 )}
@@ -98,7 +100,7 @@ export default function InfoModal({ isOpen, onClose, theme }: InfoModalProps) {
 
             {/* Symbols Paytable */}
             <section>
-              <h3 className="text-lg font-bold text-yellow-400 mb-4 uppercase tracking-wider">Таблица Выплат</h3>
+              <h3 className="text-lg font-bold text-yellow-400 mb-4 uppercase tracking-wider">{t('paytable')}</h3>
               <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
                 {Object.values(SymbolType).map((type) => {
                   const symbol = SYMBOL_CONFIG[type];
@@ -127,7 +129,7 @@ export default function InfoModal({ isOpen, onClose, theme }: InfoModalProps) {
                         <div className="font-bold text-white">{type === SymbolType.WILD ? 'WILD' : ''}</div>
                         <div className="text-xs text-gray-400">
                           {type === SymbolType.WILD 
-                            ? (theme === 'flour' ? 'Расширяется на 2 клетки' : 'Заменяет символы') 
+                            ? (theme === 'flour' ? t('wild_expand') : t('wild_replace')) 
                             : `x${symbol.multiplier}`}
                         </div>
                       </div>
@@ -142,7 +144,7 @@ export default function InfoModal({ isOpen, onClose, theme }: InfoModalProps) {
             <section className="bg-gradient-to-br from-blue-500/10 to-purple-500/10 rounded-2xl p-5 border border-white/5">
               <h3 className="text-lg font-bold text-white mb-3 flex items-center gap-2">
                 <Zap className="text-yellow-400" size={20} />
-                Особенности
+                {t('features')}
               </h3>
               
               <div className="space-y-4">
@@ -151,13 +153,12 @@ export default function InfoModal({ isOpen, onClose, theme }: InfoModalProps) {
                      <Star className="text-blue-400" />
                    </div>
                    <div>
-                     <h4 className="font-bold text-white">Бонусная Игра</h4>
+                     <h4 className="font-bold text-white">{t('bonus_game_title')}</h4>
                      <p className="text-xs text-gray-400 mt-1">
-                       Поймайте 5 или больше Монет, чтобы запустить бонус Hold & Win. 
-                       Начните с 3 спинов. Каждая новая монета сбрасывает счетчик спинов до 3.
-                       <span className="block text-yellow-400 font-bold mt-1">В конце вы забираете сумму всех монет!</span>
-                       <span className="block text-red-400 font-bold mt-1">Красные Монеты (X): Умножают случайную монету на x2 или x3.</span>
-                       <span className="block text-yellow-500 font-bold mt-1">Желтые Монеты (SUM): Собирают сумму всех видимых монет.</span>
+                       {t('bonus_game_desc')}
+                       <span className="block text-yellow-400 font-bold mt-1">{t('bonus_end')}</span>
+                       <span className="block text-red-400 font-bold mt-1">{t('red_coins')}</span>
+                       <span className="block text-yellow-500 font-bold mt-1">{t('yellow_coins')}</span>
                      </p>
                    </div>
                 </div>
@@ -170,9 +171,9 @@ export default function InfoModal({ isOpen, onClose, theme }: InfoModalProps) {
                        </div>
                      </div>
                      <div>
-                       <h4 className="font-bold text-white">Расширяющийся Wild</h4>
+                       <h4 className="font-bold text-white">{t('expanding_wild')}</h4>
                        <p className="text-xs text-gray-400 mt-1">
-                          В этой теме WILD символ расширяется вертикально, занимая 2 клетки, что увеличивает шансы на победу!
+                          {t('expanding_wild_desc')}
                        </p>
                      </div>
                   </div>
@@ -183,9 +184,9 @@ export default function InfoModal({ isOpen, onClose, theme }: InfoModalProps) {
                      <Gift className="text-purple-400" />
                    </div>
                    <div>
-                     <h4 className="font-bold text-white">Множители Выигрыша</h4>
+                     <h4 className="font-bold text-white">{t('win_multipliers')}</h4>
                      <p className="text-xs text-gray-400 mt-1">
-                       Соберите 4 символа для множителя выигрыша x2. Соберите 5 символов для множителя x5!
+                       {t('win_multipliers_desc')}
                      </p>
                    </div>
                 </div>
