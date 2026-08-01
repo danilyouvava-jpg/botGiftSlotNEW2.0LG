@@ -250,7 +250,8 @@ export default function App() {
         isActive: currentTheme === 'durov',
         theme: 'durov',
         onTransaction: handleTransaction,
-        isMuted
+        isMuted,
+        userId
     });
 
     const flourEngine = useGameEngine({
@@ -263,7 +264,8 @@ export default function App() {
         isActive: currentTheme === 'flour',
         theme: 'flour',
         onTransaction: handleTransaction,
-        isMuted
+        isMuted,
+        userId
     });
 
     const obezianaEngine = useGameEngine({
@@ -277,6 +279,7 @@ export default function App() {
         theme: 'obeziana',
         onTransaction: handleTransaction,
         isMuted,
+        userId,
         rows: 3,
         cols: 3
     });

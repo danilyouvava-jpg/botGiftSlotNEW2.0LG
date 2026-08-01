@@ -5,6 +5,7 @@ const express = require('express');
 const cors = require('cors');
 const { Telegraf } = require('telegraf');
 const { Pool } = require('pg');
+const slotMath = require('./slotMath.cjs');
 
 // --- Configuration Loading ---
 let token = process.env.BOT_TOKEN || process.env.TELEGRAM_BOT_TOKEN || '';
@@ -664,6 +665,175 @@ app.post('/api/game/transaction', requireAuth, async (req, res) => {
     }
     const newBalance = await updateBalance(userId, amount);
     res.json({ balance: newBalance });
+});
+
+app.post('/api/game/spin', requireAuth, async (req, res) => {
+    const { userId, bet, theme, lockedCells, currentGrid } = req.body;
+    const authId = process.env.NODE_ENV === 'production' ? req.authUserId : userId;
+    if (authId !== userId) return res.status(403).json({ error: 'Forbidden' });
+
+    if (!userId || !bet || typeof bet !== 'number' || bet <= 0) {
+        return res.status(400).json({ error: 'Invalid bet' });
+    }
+    if (bet > 500) {
+        return res.status(400).json({ error: 'Max bet is 500' });
+    }
+    const validThemes = ['durov', 'flour', 'obeziana'];
+    const spinTheme = validThemes.includes(theme) ? theme : 'durov';
+
+    const client = await pool.connect();
+    try {
+        await client.query('BEGIN');
+
+        const balRes = await client.query(
+            'SELECT balance FROM balances WHERE user_id = $1 FOR UPDATE',
+            [userId]
+        );
+        const currentBalance = balRes.rows.length > 0 ? Number(balRes.rows[0].balance) : 0;
+
+        if (currentBalance < bet) {
+            await client.query('ROLLBACK');
+            return res.status(400).json({ error: 'Insufficient balance' });
+        }
+
+        await client.query(
+            'UPDATE balances SET balance = balance - $1 WHERE user_id = $2',
+            [bet, userId]
+        );
+
+        const result = slotMath.runSpin(bet, spinTheme, lockedCells, currentGrid);
+
+        let totalWin = result.winAmount;
+        if (result.bonus) {
+            totalWin += result.bonus.totalWin;
+        }
+
+        if (totalWin > 0) {
+            await client.query(
+                'UPDATE balances SET balance = balance + $1 WHERE user_id = $2',
+                [totalWin, userId]
+            );
+        }
+
+        const finalBalRes = await client.query(
+            'SELECT balance FROM balances WHERE user_id = $1',
+            [userId]
+        );
+        const newBalance = Number(finalBalRes.rows[0]?.balance || 0);
+
+        await logTransaction({
+            id: `spin_${userId}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+            userId,
+            amount: -bet + totalWin,
+            type: 'spin',
+            status: 'completed'
+        });
+
+        await client.query('COMMIT');
+
+        res.json({
+            success: true,
+            grid: result.grid,
+            winAmount: result.winAmount,
+            winningLines: result.winningLines,
+            newBalance,
+            isBonusTriggered: result.isBonusTriggered,
+            bonus: result.bonus
+        });
+    } catch (e) {
+        await client.query('ROLLBACK');
+        console.error('Spin error:', e);
+        res.status(500).json({ error: 'Internal error' });
+    } finally {
+        client.release();
+    }
+});
+
+app.post('/api/game/buy-bonus', requireAuth, async (req, res) => {
+    const { userId, bet, theme } = req.body;
+    const authId = process.env.NODE_ENV === 'production' ? req.authUserId : userId;
+    if (authId !== userId) return res.status(403).json({ error: 'Forbidden' });
+
+    if (!userId || !bet || typeof bet !== 'number' || bet <= 0) {
+        return res.status(400).json({ error: 'Invalid bet' });
+    }
+    const cost = Math.round(bet * 100);
+    const validThemes = ['durov', 'flour', 'obeziana'];
+    const spinTheme = validThemes.includes(theme) ? theme : 'durov';
+
+    const client = await pool.connect();
+    try {
+        await client.query('BEGIN');
+
+        const balRes = await client.query(
+            'SELECT balance FROM balances WHERE user_id = $1 FOR UPDATE',
+            [userId]
+        );
+        const currentBalance = balRes.rows.length > 0 ? Number(balRes.rows[0].balance) : 0;
+
+        if (currentBalance < cost) {
+            await client.query('ROLLBACK');
+            return res.status(400).json({ error: 'Insufficient balance' });
+        }
+
+        await client.query(
+            'UPDATE balances SET balance = balance - $1 WHERE user_id = $2',
+            [cost, userId]
+        );
+
+        const triggerGrid = slotMath.generateGrid(slotMath.ROWS, slotMath.COLS, false, bet, spinTheme);
+        let coinsCount = slotMath.countCoins(triggerGrid);
+        while (coinsCount < 5) {
+            const r = Math.floor(Math.random() * slotMath.ROWS);
+            const c = Math.floor(Math.random() * slotMath.COLS);
+            if (triggerGrid[r][c].type !== slotMath.SymbolType.COIN) {
+                triggerGrid[r][c] = {
+                    id: crypto.randomBytes(6).toString('base64url'),
+                    type: slotMath.SymbolType.COIN,
+                    coinValue: Math.max(0.1, Math.round(bet * (Math.random() * 0.5 + 0.1) * 10) / 10),
+                    coinType: 'STANDARD',
+                    isLocked: false
+                };
+                coinsCount++;
+            }
+        }
+
+        const bonusResult = slotMath.simulateBonusRound(triggerGrid, bet, spinTheme);
+
+        await client.query(
+            'UPDATE balances SET balance = balance + $1 WHERE user_id = $2',
+            [bonusResult.totalWin, userId]
+        );
+
+        const finalBalRes = await client.query(
+            'SELECT balance FROM balances WHERE user_id = $1',
+            [userId]
+        );
+        const newBalance = Number(finalBalRes.rows[0]?.balance || 0);
+
+        await logTransaction({
+            id: `bonus_${userId}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+            userId,
+            amount: -cost + bonusResult.totalWin,
+            type: 'buy_bonus',
+            status: 'completed'
+        });
+
+        await client.query('COMMIT');
+
+        res.json({
+            success: true,
+            triggerGrid,
+            bonus: bonusResult,
+            newBalance
+        });
+    } catch (e) {
+        await client.query('ROLLBACK');
+        console.error('Buy bonus error:', e);
+        res.status(500).json({ error: 'Internal error' });
+    } finally {
+        client.release();
+    }
 });
 
 app.post('/api/promocode/activate', requireAuth, async (req, res) => {
