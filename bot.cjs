@@ -149,6 +149,12 @@ const pool = new Pool({
     ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false
 });
 
+// pg emits 'error' on idle clients (killed connections, Railway restarts, SSL timeouts).
+// Without a listener this crashes the whole process - log and keep serving.
+pool.on('error', (err) => {
+    console.error('Unexpected error on idle PostgreSQL client:', err.message);
+});
+
 async function initDB() {
     const client = await pool.connect();
     try {
@@ -459,30 +465,51 @@ bot.on('successful_payment', async (ctx) => {
     const userId = ctx.from.id;
     const amount = payment.total_amount;
     const currency = payment.currency;
+    const chargeId = payment.provider_payment_charge_id;
 
+    const client = await pool.connect();
     try {
-        const newBalance = await updateBalance(userId, amount);
+        await client.query('BEGIN');
 
-        await logTransaction({
-            id: payment.provider_payment_charge_id,
-            userId: userId,
-            username: ctx.from.username,
-            amount: amount,
-            currency: currency,
-            payload: payment.invoice_payload,
-            type: 'deposit'
-        }).catch(e => console.error('Transaction log failed (balance already credited):', e));
+        // Idempotency: if this payment was already processed, don't credit again.
+        // Telegram may redeliver the update if the process dies after crediting.
+        const logged = await client.query(
+            `INSERT INTO transactions (id, user_id, username, amount, currency, payload, type, status)
+             VALUES ($1, $2, $3, $4, $5, $6, 'deposit', 'completed')
+             ON CONFLICT (id) DO NOTHING
+             RETURNING id`,
+            [chargeId, userId, ctx.from.username, amount, currency, payment.invoice_payload]
+        );
 
-        await ctx.reply(`\u2705 \u041E\u043F\u043B\u0430\u0442\u0430 \u043F\u0440\u043E\u0448\u043B\u0430 \u0443\u0441\u043F\u0435\u0448\u043D\u043E! \u041F\u043E\u043B\u0443\u0447\u0435\u043D\u043E ${amount} \u0437\u0432\u0435\u0437\u0434. \u0411\u0430\u043B\u0430\u043D\u0441: ${newBalance}`);
+        if (logged.rows.length === 0) {
+            await client.query('ROLLBACK');
+            console.warn(`Duplicate successful_payment received, already processed: ${chargeId}`);
+            return ctx.reply(`\u2705 \u041E\u043F\u043B\u0430\u0442\u0430 \u0443\u0436\u0435 \u0431\u044B\u043B\u0430 \u0437\u0430\u0447\u0438\u0441\u043B\u0435\u043D\u0430 \u0440\u0430\u043D\u0435\u0435.`).catch(() => { });
+        }
+
+        const balRes = await client.query(
+            `INSERT INTO balances (user_id, balance) VALUES ($1, $2)
+             ON CONFLICT (user_id) DO UPDATE SET balance = ROUND((balances.balance + $2)::numeric, 2)
+             RETURNING balance`,
+            [userId, amount]
+        );
+
+        await client.query('COMMIT');
+        const newBalance = Number(balRes.rows[0].balance);
+
+        await ctx.reply(`\u2705 \u041E\u043F\u043B\u0430\u0442\u0430 \u043F\u0440\u043E\u0448\u043B\u0430 \u0443\u0441\u043F\u0435\u0448\u043D\u043E! \u041F\u043E\u043B\u0443\u0447\u0435\u043D\u043E ${amount} \u0437\u0432\u0435\u0437\u0434. \u0411\u0430\u043B\u0430\u043D\u0441: ${newBalance}`).catch(() => { });
 
         if (ADMIN_ID) {
             bot.telegram.sendMessage(ADMIN_ID, `\u{1F4B0} \u041D\u043E\u0432\u043E\u0435 \u043F\u043E\u043F\u043E\u043B\u043D\u0435\u043D\u0438\u0435!\nUser: ${ctx.from.first_name} (@${ctx.from.username})\nAmount: ${amount} Stars`).catch(e => console.error('Admin notify failed', e));
         }
     } catch (e) {
-        console.error('CRITICAL: Failed to credit balance for payment:', payment.provider_payment_charge_id, e);
+        await client.query('ROLLBACK').catch(() => { });
+        console.error('CRITICAL: Failed to credit balance for payment:', chargeId, e);
         try {
             await ctx.reply(`\u26A0\uFE0F \u041E\u043F\u043B\u0430\u0442\u0430 \u043F\u043E\u043B\u0443\u0447\u0435\u043D\u0430, \u043D\u043E \u043F\u0440\u043E\u0438\u0437\u043E\u0448\u043B\u0430 \u043E\u0448\u0438\u0431\u043A\u0430. \u041D\u0430\u043F\u0438\u0448\u0438\u0442\u0435 @admin \u0434\u043B\u044F \u043F\u043E\u043C\u043E\u0449\u0438.`);
         } catch { }
+    } finally {
+        client.release();
     }
 });
 
@@ -673,6 +700,16 @@ app.post('/api/roulette/claim', requireAuth, async (req, res) => {
 // Trusted source: never accept grid/locked cells from the client.
 const lockedCellsByUser = new Map();
 
+// Only bet values the client UI actually offers (TON + STARS presets).
+// Rejects fractional micro-bets (e.g. 0.004) that would otherwise
+// break the buy-bonus cost floor (Math.round(0.004*100) === 0) and
+// the coinValue floor (0.1) - a guaranteed-profit exploit.
+const VALID_BETS = [0.1, 0.3, 0.5, 1, 1.5, 2, 2.5, 5, 10, 25, 50];
+
+function isValidBet(bet) {
+    return typeof bet === 'number' && Number.isFinite(bet) && VALID_BETS.includes(bet);
+}
+
 function computeNewLocks(theme, prevLocks, finalGrid) {
     if (theme !== 'obeziana') return [];
 
@@ -695,7 +732,7 @@ app.post('/api/game/spin', requireAuth, async (req, res) => {
     const authId = process.env.NODE_ENV === 'production' ? req.authUserId : userId;
     if (authId !== userId) return res.status(403).json({ error: 'Forbidden' });
 
-    if (!userId || !bet || typeof bet !== 'number' || bet <= 0) {
+    if (!userId || !isValidBet(bet)) {
         return res.status(400).json({ error: 'Invalid bet' });
     }
     if (bet > 500) {
@@ -780,7 +817,7 @@ app.post('/api/game/buy-bonus', requireAuth, async (req, res) => {
     const authId = process.env.NODE_ENV === 'production' ? req.authUserId : userId;
     if (authId !== userId) return res.status(403).json({ error: 'Forbidden' });
 
-    if (!userId || !bet || typeof bet !== 'number' || bet <= 0) {
+    if (!userId || !isValidBet(bet)) {
         return res.status(400).json({ error: 'Invalid bet' });
     }
     if (bet > 500) {

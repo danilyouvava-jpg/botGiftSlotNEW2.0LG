@@ -77,9 +77,14 @@ function uid() {
     return crypto.randomBytes(9).toString('base64url').slice(0, 12);
 }
 
+// CSPRNG for casino fairness - Math.random is predictable (V8 PRNG)
+function rand() {
+    return crypto.randomInt(0, 1e9) / 1e9;
+}
+
 function pickWeighted(weights) {
     const total = weights.reduce((s, w) => s + w.weight, 0);
-    let r = Math.random() * total;
+    let r = rand() * total;
     for (const w of weights) {
         r -= w.weight;
         if (r <= 0) return w.type;
@@ -111,7 +116,7 @@ function getRandomSymbol(isBonus, bet, theme) {
     let coinType = CoinType.STANDARD;
 
     if (selectedType === SymbolType.COIN) {
-        const valRoll = Math.random();
+        const valRoll = rand();
         let mult = 0.5;
 
         if (bet >= 25) {
@@ -122,7 +127,7 @@ function getRandomSymbol(isBonus, bet, theme) {
             else if (valRoll > 0.25) mult = 0.8;
             else mult = 0.5;
         } else {
-            if (valRoll > 0.98) { mult = 5.0; if (theme === 'durov' && Math.random() > 0.9) mult = 10.0; }
+            if (valRoll > 0.98) { mult = 5.0; if (theme === 'durov' && rand() > 0.9) mult = 10.0; }
             else if (valRoll > 0.95) mult = 3.0;
             else if (valRoll > 0.85) mult = 2.0;
             else if (valRoll > 0.70) mult = 1.5;
@@ -134,7 +139,7 @@ function getRandomSymbol(isBonus, bet, theme) {
         coinValue = Math.max(0.1, Math.round(bet * mult * 10) / 10);
 
         if (isBonus) {
-            const typeRoll = Math.random();
+            const typeRoll = rand();
             if (typeRoll > 0.90) coinType = CoinType.COLLECT;
             else if (typeRoll > 0.80) coinType = CoinType.MULTIPLIER;
             else coinType = CoinType.STANDARD;
@@ -281,7 +286,7 @@ function simulateBonusRound(triggerGrid, bet, theme) {
                     if (newCell.coinType === CoinType.COLLECT) {
                         newCell.coinValue = 0;
                     } else if (newCell.coinType === CoinType.MULTIPLIER) {
-                        newCell.coinValue = Math.random() > 0.5 ? 3 : 2;
+                        newCell.coinValue = rand() > 0.5 ? 3 : 2;
                     }
                 }
             }
@@ -312,7 +317,7 @@ function simulateBonusRound(triggerGrid, bet, theme) {
                 }
             }
             if (targets.length > 0) {
-                const t = targets[Math.floor(Math.random() * targets.length)];
+                const t = targets[Math.floor(rand() * targets.length)];
                 effects.push({ from: { r: rc.r, c: rc.c }, to: t, type: 'red' });
                 if (finalGrid[t.r][t.c].coinValue) {
                     finalGrid[t.r][t.c] = { ...finalGrid[t.r][t.c], coinValue: Math.round(finalGrid[t.r][t.c].coinValue * mult * 10) / 10 };
