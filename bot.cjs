@@ -219,6 +219,12 @@ async function initDB() {
                 total_donated NUMERIC DEFAULT 0
             );
         `);
+        await client.query(`
+            CREATE TABLE IF NOT EXISTS user_langs (
+                user_id BIGINT PRIMARY KEY,
+                lang TEXT DEFAULT 'ru'
+            );
+        `);
         console.log('Database tables initialized');
         await client.query("UPDATE balances SET balance = 0 WHERE balance < 0");
     } finally {
@@ -452,9 +458,21 @@ bot.start(async (ctx) => {
     }
 
     const startPhotoUrl = `${CASINO_URL}/start.png`;
-    const userLang = (ctx.from.language_code || 'ru').toLowerCase();
-    const isEn = userLang.startsWith('en');
-    console.log(`/start from ${userId} (${ctx.from.first_name || ''}), language_code=${ctx.from.language_code || 'none'}, sending ${isEn ? 'EN' : 'RU'}`);
+    let userLang = 'ru';
+    try {
+        const langRes = await pool.query('SELECT lang FROM user_langs WHERE user_id = $1', [userId]);
+        if (langRes.rows.length > 0) {
+            userLang = langRes.rows[0].lang === 'en' ? 'en' : 'ru';
+        }
+    } catch (e) {
+        console.error('Failed to read user lang:', e);
+    }
+    if (userLang === 'ru') {
+        const tgLang = (ctx.from.language_code || 'ru').toLowerCase();
+        if (tgLang.startsWith('en')) userLang = 'en';
+    }
+    const isEn = userLang === 'en';
+    console.log(`/start from ${userId} (${ctx.from.first_name || ''}), language_code=${ctx.from.language_code || 'none'}, stored=${userLang}, sending ${isEn ? 'EN' : 'RU'}`);
     const startCaption = isEn
         ? 'Test your luck in GiftSlot\n\u{1F381} Enter promo codes for stars and earn stars every day'
         : '\u0418\u0441\u043F\u044B\u0442\u0430\u0439 \u0443\u0434\u0430\u0447\u0443 \u0432 GiftSlot\n\u{1F381} \u0412\u0432\u043E\u0434\u0438 \u043F\u0440\u043E\u043C\u043E\u043A\u043E\u0434\u044B \u043D\u0430 \u0437\u0432\u0435\u0437\u0434\u044B \u0438 \u0437\u0430\u0440\u0430\u0431\u0430\u0442\u044B\u0432\u0430\u0439 \u0437\u0432\u0435\u0437\u0434\u044B \u043A\u0430\u0436\u0434\u044B\u0439 \u0434\u0435\u043D\u044C';
@@ -1187,6 +1205,26 @@ app.post('/api/test/add-balance', requireAuth, async (req, res) => {
         status: 'completed'
     });
     res.json({ success: true, newBalance });
+});
+
+app.post('/api/language', requireAuth, async (req, res) => {
+    const { userId, lang } = req.body;
+    const authId = process.env.NODE_ENV === 'production' ? req.authUserId : userId;
+    if (authId !== userId) return res.status(403).json({ error: 'Forbidden' });
+
+    const cleanLang = lang === 'en' ? 'en' : 'ru';
+    if (!userId) return res.status(400).json({ error: 'Invalid params' });
+
+    try {
+        await pool.query(`
+            INSERT INTO user_langs (user_id, lang) VALUES ($1, $2)
+            ON CONFLICT (user_id) DO UPDATE SET lang = $2
+        `, [userId, cleanLang]);
+        res.json({ success: true, lang: cleanLang });
+    } catch (e) {
+        console.error('Set language error:', e);
+        res.status(500).json({ error: 'Internal error' });
+    }
 });
 
 app.post('/api/referral/activate', requireAuth, async (req, res) => {

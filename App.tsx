@@ -41,6 +41,7 @@ const PRELOADED = {
 
 export default function App() {
     const { lang, setLang, t } = useI18n();
+
     // Preload Images and Lotties
     useEffect(() => {
         if (typeof window === 'undefined') return;
@@ -144,6 +145,16 @@ export default function App() {
     const [bgReady, setBgReady] = useState<boolean>(true);
     const [userId, setUserId] = useState<number | null>(null);
     const [isMuted, setIsMuted] = useState(false);
+
+    // Sync language choice to server so the bot uses it for /start and messages
+    useEffect(() => {
+        if (!userId) return;
+        fetch('/api/language', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', ...authHeaders() },
+            body: JSON.stringify({ userId, lang })
+        }).catch(e => console.error('Failed to sync language', e));
+    }, [lang, userId]);
 
     const handleWithdraw = async (amount: number) => {
         if (!userId) return false;
