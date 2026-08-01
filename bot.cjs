@@ -473,9 +473,7 @@ bot.start(async (ctx) => {
     }
     const isEn = userLang === 'en';
     console.log(`/start from ${userId} (${ctx.from.first_name || ''}), language_code=${ctx.from.language_code || 'none'}, stored=${userLang}, sending ${isEn ? 'EN' : 'RU'}`);
-    const startCaption = isEn
-        ? 'Test your luck in GiftSlot\n\u{1F381} Enter promo codes for stars and earn stars every day'
-        : '\u0418\u0441\u043F\u044B\u0442\u0430\u0439 \u0443\u0434\u0430\u0447\u0443 \u0432 GiftSlot\n\u{1F381} \u0412\u0432\u043E\u0434\u0438 \u043F\u0440\u043E\u043C\u043E\u043A\u043E\u0434\u044B \u043D\u0430 \u0437\u0432\u0435\u0437\u0434\u044B \u0438 \u0437\u0430\u0440\u0430\u0431\u0430\u0442\u044B\u0432\u0430\u0439 \u0437\u0432\u0435\u0437\u0434\u044B \u043A\u0430\u0436\u0434\u044B\u0439 \u0434\u0435\u043D\u044C';
+    const startCaption = '\u0418\u0441\u043F\u044B\u0442\u0430\u0439 \u0443\u0434\u0430\u0447\u0443 \u0432 GiftSlot\n\u{1F381} \u0412\u0432\u043E\u0434\u0438 \u043F\u0440\u043E\u043C\u043E\u043A\u043E\u0434\u044B \u043D\u0430 \u0437\u0432\u0435\u0437\u0434\u044B \u0438 \u0437\u0430\u0440\u0430\u0431\u0430\u0442\u044B\u0432\u0430\u0439 \u0437\u0432\u0435\u0437\u0434\u044B \u043A\u0430\u0436\u0434\u044B\u0439 \u0434\u0435\u043D\u044C\n\nEN: Test your luck in GiftSlot\n\u{1F381} Enter promo codes for stars and earn stars every day';
     ctx.replyWithPhoto(startPhotoUrl, {
         caption: startCaption,
         reply_markup: {
