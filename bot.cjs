@@ -360,6 +360,7 @@ async function seedPromos() {
     const promos = [
         { code: 'NEWHOME', reward: 20, maxUsages: 1 },
         { code: 'STIKERS', reward: 15, maxUsages: 1 },
+        { code: 'FIX', reward: 3, maxUsages: 1 },
     ];
 
     for (const p of promos) {
