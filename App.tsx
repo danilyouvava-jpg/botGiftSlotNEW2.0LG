@@ -436,7 +436,7 @@ export default function App() {
                 <div className="p-4 flex flex-col gap-3">
                     {/* Currency Switcher Removed */}
                     <div className="ios-card p-5 flex flex-col gap-1.5 relative overflow-hidden group">
-                        <div className="absolute top-0 right-0 p-3 opacity-10 group-hover:scale-110 transition-transform">
+                        <div className="absolute bottom-0 right-4 opacity-10 group-hover:scale-110 transition-transform">
                             {currency === 'TON' ? <Wallet size={48} /> : <Star size={48} />}
                         </div>
                         <div className="flex justify-between items-start relative z-10">
