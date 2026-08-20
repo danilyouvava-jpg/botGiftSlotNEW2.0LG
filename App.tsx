@@ -436,17 +436,19 @@ export default function App() {
                 <div className="p-4 flex flex-col gap-3">
                     {/* Currency Switcher Removed */}
                     <div className="ios-card p-5 flex flex-col gap-1.5 relative overflow-hidden group">
-                        <div className="absolute bottom-0 right-4 opacity-10 group-hover:scale-110 transition-transform">
-                            {currency === 'TON' ? <Wallet size={48} /> : <Star size={48} />}
-                        </div>
                         <div className="flex justify-between items-start relative z-10">
                             <span className="text-xs text-white/50 font-semibold uppercase tracking-widest">{t('total_balance')}</span>
-                            <button
-                                onClick={() => setShowDeposit(true)}
-                                className="ios-btn ios-btn-gold w-7 h-7 flex items-center justify-center"
-                            >
-                                <Plus size={14} className="text-[#1a1a1a]" />
-                            </button>
+                            <div className="relative">
+                                <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 opacity-15 pointer-events-none">
+                                    {currency === 'TON' ? <Wallet size={56} /> : <Star size={56} />}
+                                </div>
+                                <button
+                                    onClick={() => setShowDeposit(true)}
+                                    className="ios-btn ios-btn-gold w-9 h-9 flex items-center justify-center"
+                                >
+                                    <Plus size={15} className="text-[#1a1a1a]" />
+                                </button>
+                            </div>
                         </div>
                         <div className="flex items-end gap-1.5 relative z-10">
                             <span className="text-3xl font-bold tracking-tight">
