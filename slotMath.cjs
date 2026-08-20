@@ -198,7 +198,7 @@ function checkWin(grid, bet, theme) {
         }
         if (planeCount >= 3) {
             const mult = SYMBOL_CONFIG[SymbolType.PLANE].multiplier;
-            winAmount += bet * mult;
+            winAmount += bet * mult * (theme === 'durov' ? 3.3 : theme === 'obeziana' ? 3.2 : 1.6);
             planeCells.forEach(cell => winningLines.push({ row: cell.r, col: cell.c }));
         }
     }
@@ -230,7 +230,7 @@ function checkWin(grid, bet, theme) {
             if (matchCount === 4) lengthMult = 2;
             if (matchCount === 5) lengthMult = 5;
             const symbolMult = SYMBOL_CONFIG[currentSymbol].multiplier;
-            winAmount += bet * symbolMult * lengthMult;
+            winAmount += bet * symbolMult * lengthMult * (theme === 'durov' ? 3.3 : theme === 'obeziana' ? 3.2 : 1.6);
             for (let i = 0; i < matchCount; i++) winningLines.push({ row: r, col: i });
         }
     }
