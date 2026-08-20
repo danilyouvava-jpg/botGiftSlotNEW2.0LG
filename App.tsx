@@ -388,45 +388,46 @@ export default function App() {
             {/* Sidebar (Desktop) / Header (Mobile) */}
             <div className={`w-full md:w-80 md:border-r border-white/5 flex flex-col z-20 shadow-xl ${currentTheme === 'flour' ? 'bg-[#132a13]' : currentTheme === 'obeziana' ? 'bg-[#363529]' : 'bg-[#17212b]'}`}>
                 {/* Header */}
-                <div className={`h-14 flex items-center justify-between px-4 border-b border-white/5 ${currentTheme === 'flour' ? 'bg-[#132a13]' : currentTheme === 'obeziana' ? 'bg-[#363529]' : 'bg-[#232e3c]'}`}>
+                <div className={`ios-header h-14 flex items-center justify-between px-4 ${currentTheme === 'flour' ? 'bg-[#132a13]/80' : currentTheme === 'obeziana' ? 'bg-[#363529]/80' : ''}`}>
                     <div className="flex items-center gap-2">
                         <div className="flex flex-col">
-                            <span className="font-bold text-sm leading-tight">GIFT SLOT</span>
+                            <span className="font-bold text-sm leading-tight tracking-tight">GIFT SLOT</span>
                         </div>
                     </div>
-                    <div className="flex gap-2">
+                    <div className="flex gap-1.5">
                         <button
                             onClick={() => setShowReferral(true)}
-                            className="px-3 py-1.5 bg-gradient-to-r from-blue-500 to-blue-600 hover:from-blue-600 hover:to-blue-700 rounded-full flex items-center gap-1.5 transition-all shadow-lg shadow-blue-500/20"
+                            className="ios-btn ios-btn-dark px-3 py-1.5 flex items-center gap-1.5"
                         >
-                            <Users size={16} className="text-white" />
-                            <span className="text-xs font-bold text-white">+2⭐</span>
+                            <Users size={15} />
+                            <span className="text-xs font-bold">+2⭐</span>
                         </button>
                         <button
                             onClick={() => setShowRoulette(true)}
-                            className="p-2 hover:bg-white/5 rounded-full"
+                            className="ios-icon-btn"
+                            title="Roulette"
                         >
-                            <Gift size={18} className="text-gray-400" />
+                            <Gift size={17} />
                         </button>
                         <button
                             onClick={() => setLang(lang === 'ru' ? 'en' : 'ru')}
                             title={t('lang_switch_title')}
-                            className="p-2 hover:bg-white/5 rounded-full flex items-center gap-1"
+                            className="ios-icon-btn gap-0.5"
                         >
-                            <Languages size={18} className="text-gray-400" />
-                            <span className="text-xs font-bold text-gray-400">{lang === 'ru' ? 'EN' : 'RU'}</span>
+                            <Languages size={15} />
+                            <span className="text-[10px] font-bold">{lang === 'ru' ? 'EN' : 'RU'}</span>
                         </button>
                         <button
-                            className="p-2 hover:bg-white/5 rounded-full"
+                            className="ios-icon-btn"
                             onClick={() => setIsMuted(!isMuted)}
                         >
-                            {isMuted ? <VolumeX size={18} className="text-gray-400" /> : <Volume2 size={18} className="text-gray-400" />}
+                            {isMuted ? <VolumeX size={17} /> : <Volume2 size={17} />}
                         </button>
                         <button
                             onClick={() => setShowInfo(true)}
-                            className="p-2 hover:bg-white/5 rounded-full"
+                            className="ios-icon-btn"
                         >
-                            <Info size={18} className="text-gray-400" />
+                            <Info size={17} />
                         </button>
                     </div>
                 </div>
@@ -434,17 +435,17 @@ export default function App() {
                 {/* Balance Card & Currency Switch */}
                 <div className="p-4 flex flex-col gap-3">
                     {/* Currency Switcher Removed */}
-                    <div className={`${currentTheme === 'flour' ? 'bg-[#31572c] border border-white/10' : currentTheme === 'obeziana' ? 'bg-[#363529] border border-white/10' : 'glass-panel'} p-4 rounded-2xl flex flex-col gap-1 relative overflow-hidden group`}>
+                    <div className="ios-card p-5 flex flex-col gap-1.5 relative overflow-hidden group">
                         <div className="absolute top-0 right-0 p-3 opacity-10 group-hover:scale-110 transition-transform">
                             {currency === 'TON' ? <Wallet size={48} /> : <Star size={48} />}
                         </div>
                         <div className="flex justify-between items-start relative z-10">
-                            <span className="text-xs text-gray-400 font-medium uppercase tracking-wider">{t('total_balance')}</span>
+                            <span className="text-xs text-white/50 font-semibold uppercase tracking-widest">{t('total_balance')}</span>
                             <button
                                 onClick={() => setShowDeposit(true)}
-                                className={`w-6 h-6 rounded-full flex items-center justify-center transition-colors ${currency === 'TON' ? 'bg-blue-500 hover:bg-blue-400' : 'bg-yellow-500 hover:bg-yellow-400'}`}
+                                className="ios-btn ios-btn-gold w-7 h-7 flex items-center justify-center"
                             >
-                                <Plus size={14} className="text-white" />
+                                <Plus size={14} className="text-[#1a1a1a]" />
                             </button>
                         </div>
                         <div className="flex items-end gap-1.5 relative z-10">
@@ -462,32 +463,32 @@ export default function App() {
 
                 {/* Desktop Controls Spacer */}
                 <div className="hidden md:flex flex-1 flex-col justify-between p-4 gap-4">
-                    <div className="flex flex-col gap-4">
+                    <div className="flex flex-col gap-3">
                         {/* Durov Slot Button */}
                         <button
                             onClick={() => !isGameLocked && !isBetLocked && setCurrentTheme('durov')}
                             disabled={isGameLocked || isBetLocked}
-                            className={`w-full hover:scale-105 transition-transform duration-200 group ${currentTheme === 'durov' ? 'ring-2 ring-blue-500 rounded-xl' : ''} ${isGameLocked || isBetLocked ? 'opacity-50 cursor-not-allowed hover:scale-100' : ''}`}
+                            className={`w-full transition-all duration-200 group ${currentTheme === 'durov' ? 'ring-2 ring-[#0a84ff] ring-offset-2 ring-offset-black/40 rounded-[22px]' : 'rounded-[22px]'} ${isGameLocked || isBetLocked ? 'opacity-50 cursor-not-allowed hover:scale-100' : 'hover:scale-[1.02] active:scale-[0.98]'}`}
                         >
-                            <img src="/durovslot.png" alt="Durov Slot" className="w-full h-auto rounded-xl shadow-lg border border-white/10 group-hover:shadow-blue-500/20" />
+                            <img src="/durovslot.png" alt="Durov Slot" className="w-full h-auto rounded-[22px] shadow-lg border border-white/10 group-hover:shadow-[#5288c1]/30" />
                         </button>
 
                         {/* Flour Slot Button */}
                         <button
                             onClick={() => !isGameLocked && !isBetLocked && setCurrentTheme('flour')}
                             disabled={isGameLocked || isBetLocked}
-                            className={`w-full hover:scale-105 transition-transform duration-200 group ${currentTheme === 'flour' ? 'ring-2 ring-blue-500 rounded-xl' : ''} ${isGameLocked || isBetLocked ? 'opacity-50 cursor-not-allowed hover:scale-100' : ''}`}
+                            className={`w-full transition-all duration-200 group ${currentTheme === 'flour' ? 'ring-2 ring-[#0a84ff] ring-offset-2 ring-offset-black/40 rounded-[22px]' : 'rounded-[22px]'} ${isGameLocked || isBetLocked ? 'opacity-50 cursor-not-allowed hover:scale-100' : 'hover:scale-[1.02] active:scale-[0.98]'}`}
                         >
-                            <img src="/flourslot.png" alt="Flour Slot" className="w-full h-auto rounded-xl shadow-lg border border-white/10 group-hover:shadow-blue-500/20" />
+                            <img src="/flourslot.png" alt="Flour Slot" className="w-full h-auto rounded-[22px] shadow-lg border border-white/10 group-hover:shadow-[#5288c1]/30" />
                         </button>
 
                         {/* Third Button */}
                         <button
                             onClick={() => !isGameLocked && !isBetLocked && setCurrentTheme('obeziana')}
                             disabled={isGameLocked || isBetLocked}
-                            className={`w-full hover:scale-105 transition-transform duration-200 group ${currentTheme === 'obeziana' ? 'ring-2 ring-blue-500 rounded-xl' : ''} ${isGameLocked || isBetLocked ? 'opacity-50 cursor-not-allowed hover:scale-100' : ''}`}
+                            className={`w-full transition-all duration-200 group ${currentTheme === 'obeziana' ? 'ring-2 ring-[#0a84ff] ring-offset-2 ring-offset-black/40 rounded-[22px]' : 'rounded-[22px]'} ${isGameLocked || isBetLocked ? 'opacity-50 cursor-not-allowed hover:scale-100' : 'hover:scale-[1.02] active:scale-[0.98]'}`}
                         >
-                            <img src="/OBEZIANANANA.png" alt="Obeziana Slot" className="w-full h-auto rounded-xl shadow-lg border border-white/10 group-hover:shadow-blue-500/20" />
+                            <img src="/OBEZIANANANA.png" alt="Obeziana Slot" className="w-full h-auto rounded-[22px] shadow-lg border border-white/10 group-hover:shadow-[#5288c1]/30" />
                         </button>
                     </div>
 
@@ -568,7 +569,7 @@ export default function App() {
             </main>
 
             {/* Controls Bar (Mobile Bottom / Desktop Bottom Sticky) */}
-            <div className={`${currentTheme === 'flour' ? 'bg-[#132a13]' : currentTheme === 'obeziana' ? 'bg-[#363529]' : 'bg-[#17212b]'} border-t border-white/5 p-4 z-30 md:hidden relative`}>
+            <div className={`ios-tabbar p-4 z-30 md:hidden relative`}>
 
                 {/* RTP Badge */}
                 <div className="absolute -top-3 left-1/2 -translate-x-1/2 bg-black/60 backdrop-blur-md border border-white/10 px-2 py-0.5 rounded-md flex items-center gap-1.5 shadow-sm">
@@ -622,44 +623,28 @@ export default function App() {
 
                 {/* Simple Mobile Controls - mirrored from sidebar logic but simplified */}
                 <div className="flex gap-2">
-                    <div className={`flex-1 ${currentTheme === 'obeziana' ? 'bg-[#2D2F23]' : 'glass-panel'} rounded-xl p-1 flex items-center justify-between px-2 relative`}>
+                    <div className={`flex-1 ${currentTheme === 'obeziana' ? 'bg-[#2D2F23]/80' : 'ios-card'} rounded-xl p-1 flex items-center justify-between px-2 relative`}>
                         {isBetLocked && (
                             <div className="absolute -top-8 left-1/2 transform -translate-x-1/2 bg-black/80 text-white text-[10px] px-2 py-1 rounded pointer-events-none whitespace-nowrap">
                                 {t('bet_locked')}
                             </div>
                         )}
-                        <button onClick={decreaseBet} disabled={isGameLocked || isBetLocked || bet <= currentBetValues[0]} className="w-8 h-8 rounded bg-white/5 text-blue-400 font-bold disabled:opacity-50">-</button>
+                        <button onClick={decreaseBet} disabled={isGameLocked || isBetLocked || bet <= currentBetValues[0]} className="w-8 h-8 rounded-lg bg-white/10 text-blue-400 font-bold disabled:opacity-50 active:scale-90 transition-transform">-</button>
                         <span className={`font-bold text-sm ${isBetLocked ? 'text-gray-400' : 'text-white'}`}>{bet}</span>
-                        <button onClick={increaseBet} disabled={isGameLocked || isBetLocked || bet >= currentBetValues[currentBetValues.length - 1]} className="w-8 h-8 rounded bg-white/5 text-blue-400 font-bold disabled:opacity-50">+</button>
+                        <button onClick={increaseBet} disabled={isGameLocked || isBetLocked || bet >= currentBetValues[currentBetValues.length - 1]} className="w-8 h-8 rounded-lg bg-white/10 text-blue-400 font-bold disabled:opacity-50 active:scale-90 transition-transform">+</button>
                     </div>
-
-                    {/* Buy Bonus Mobile */}
-                    {/* <button
-                    onClick={handleBuyBonus}
-                    disabled={isGameLocked || currentBalance < Math.round(bet * 100)}
-                    className={`
-                        px-3 rounded-xl flex flex-col items-center justify-center shadow-lg transition-all
-                        ${isGameLocked || currentBalance < Math.round(bet * 100)
-                           ? 'bg-gray-700 text-gray-500' 
-                           : 'bg-gradient-to-b from-yellow-500 to-yellow-700 text-white active:scale-95'
-                        }
-                    `}
-                 >
-                    <Zap size={16} fill="currentColor" />
-                    <span className="text-[10px] font-bold leading-none mt-0.5">{Math.round(bet * 100)}</span>
-                 </button> */}
 
                     <button
                         onClick={handleSpin}
                         disabled={isGameLocked}
                         className={`
-                 flex-[1.5] h-12 rounded-xl text-lg font-bold transition-all shadow-lg
-                 flex items-center justify-center gap-2
+                 flex-[1.5] h-12 rounded-full text-lg font-bold transition-all shadow-lg
+                 flex items-center justify-center gap-2 ios-btn
                  ${isGameLocked
                                 ? 'bg-gray-700 text-gray-500 cursor-not-allowed'
                                 : currentTheme === 'obeziana'
-                                    ? 'bg-[#74884F] text-white shadow-[#74884F]/30 active:scale-95'
-                                    : 'bg-gradient-to-r from-blue-500 to-blue-600 text-white shadow-blue-500/30 active:scale-95'
+                                    ? 'ios-btn-dark'
+                                    : 'ios-btn-primary'
                             }
                `}
                     >
@@ -675,14 +660,14 @@ export default function App() {
             {/* Floating Desktop Controls (Bottom Center) */}
             <div className="hidden md:flex absolute bottom-8 left-[62%] -translate-x-1/2 z-40 gap-6 items-center">
                 {/* Bet Control */}
-                <div className="glass-panel rounded-full p-2 flex items-center gap-4 px-6 shadow-2xl transform hover:scale-105 transition-transform">
-                    <span className="text-gray-400 text-xs font-bold uppercase">{t('bet_amount')}</span>
+                <div className="ios-card rounded-full p-2 flex items-center gap-4 px-5 transform hover:scale-105 transition-transform">
+                    <span className="text-white/50 text-xs font-bold uppercase tracking-widest">{t('bet_amount')}</span>
                     <div className="flex items-center gap-3">
-                        <button onClick={decreaseBet} disabled={isGameLocked || bet <= currentBetValues[0]} className="w-8 h-8 rounded-full bg-white/10 hover:bg-white/20 text-white flex items-center justify-center transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
+                        <button onClick={decreaseBet} disabled={isGameLocked || bet <= currentBetValues[0]} className="w-8 h-8 rounded-full bg-white/10 hover:bg-white/20 text-white flex items-center justify-center transition-colors disabled:opacity-50 disabled:cursor-not-allowed active:scale-90">
                             -
                         </button>
                         <span className="text-xl font-bold min-w-[3ch] text-center">{bet}</span>
-                        <button onClick={increaseBet} disabled={isGameLocked || bet >= currentBetValues[currentBetValues.length - 1]} className="w-8 h-8 rounded-full bg-white/10 hover:bg-white/20 text-white flex items-center justify-center transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
+                        <button onClick={increaseBet} disabled={isGameLocked || bet >= currentBetValues[currentBetValues.length - 1]} className="w-8 h-8 rounded-full bg-white/10 hover:bg-white/20 text-white flex items-center justify-center transition-colors disabled:opacity-50 disabled:cursor-not-allowed active:scale-90">
                             +
                         </button>
                     </div>
@@ -713,31 +698,24 @@ export default function App() {
                 <button
                     onClick={handleSpin}
                     disabled={isGameLocked}
-                    className={`
-                 w-24 h-24 rounded-full font-black text-xl tracking-wider transition-all shadow-[0_0_30px_rgba(0,0,0,0.5)] border-4 border-[#17212b]
-                 flex items-center justify-center group relative overflow-hidden
-                 ${isGameLocked
-                            ? 'bg-gray-700 text-gray-500 grayscale'
-                            : 'bg-gradient-to-br from-blue-400 to-blue-600 text-white hover:shadow-[0_0_50px_#5288c1] hover:scale-105 active:scale-95'
-                        }
-               `}
+                    className="ios-spin-btn"
                 >
-                    <div className="absolute inset-0 bg-gradient-to-b from-white/20 to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
                     {gameState === GameState.SPINNING ? (
-                        <Loader2 className="animate-spin" size={32} />
+                        <Loader2 className="animate-spin" size={34} />
                     ) : (
-                        <span className="group-hover:animate-pulse">{t('spin')}</span>
+                        <span>{t('spin')}</span>
                     )}
                 </button>
 
                 {/* Auto/Max Buttons (Visual only for now) */}
-                <div className="glass-panel rounded-full p-2 flex items-center gap-2 px-4 shadow-2xl">
-                    <button className="w-10 h-10 rounded-full bg-white/5 hover:bg-white/10 flex items-center justify-center text-gray-400 hover:text-white transition-colors">
+                <div className="ios-card rounded-full p-1.5 flex items-center gap-1.5 px-2.5 transform hover:scale-105 transition-transform">
+                    <button className="ios-icon-btn w-10 h-10" title="Settings">
                         <Settings size={18} />
                     </button>
                     <button
                         onClick={() => setShowInfo(true)}
-                        className="w-10 h-10 rounded-full bg-white/5 hover:bg-white/10 flex items-center justify-center text-gray-400 hover:text-white transition-colors"
+                        className="ios-icon-btn w-10 h-10"
+                        title={t('info')}
                     >
                         <Info size={18} />
                     </button>

@@ -21,27 +21,27 @@ export default function InfoModal({ isOpen, onClose, theme }: InfoModalProps) {
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
         exit={{ opacity: 0 }}
-        className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm"
+        className="ios-overlay fixed inset-0 z-50 flex items-center justify-center p-4"
         onClick={onClose}
       >
         <motion.div
           initial={{ scale: 0.9, opacity: 0, y: 20 }}
           animate={{ scale: 1, opacity: 1, y: 0 }}
           exit={{ scale: 0.9, opacity: 0, y: 20 }}
-          className="bg-[#17212b] w-full max-w-2xl max-h-[85vh] rounded-3xl overflow-hidden flex flex-col shadow-2xl border border-white/10"
+          className="ios-modal w-full max-w-2xl max-h-[85vh] overflow-hidden flex flex-col"
           onClick={(e) => e.stopPropagation()}
         >
           {/* Header */}
-          <div className="flex items-center justify-between p-6 border-b border-white/5 bg-[#232e3c]">
-            <h2 className="text-2xl font-bold text-white flex items-center gap-2">
-              <Trophy className="text-yellow-400" />
+          <div className="ios-modal-header">
+            <h2 className="text-xl font-bold text-white flex items-center gap-2">
+              <Trophy className="text-yellow-400" size={22} />
               {t('rules_title')}
             </h2>
-            <button 
+            <button
               onClick={onClose}
-              className="p-2 hover:bg-white/5 rounded-full text-gray-400 hover:text-white transition-colors"
+              className="ios-icon-btn"
             >
-              <X size={24} />
+              <X size={18} />
             </button>
           </div>
 

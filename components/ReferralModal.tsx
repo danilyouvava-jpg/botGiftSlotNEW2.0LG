@@ -42,51 +42,51 @@ export default function ReferralModal({ isOpen, onClose, userId }: ReferralModal
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
         exit={{ opacity: 0 }}
-        className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm"
+        className="ios-overlay fixed inset-0 z-50 flex items-center justify-center p-4"
         onClick={onClose}
       >
         <motion.div
           initial={{ scale: 0.9, opacity: 0, y: 20 }}
           animate={{ scale: 1, opacity: 1, y: 0 }}
           exit={{ scale: 0.9, opacity: 0, y: 20 }}
-          className="bg-[#17212b] w-full max-w-lg rounded-3xl overflow-hidden flex flex-col shadow-2xl border border-white/10"
+          className="ios-modal w-full max-w-lg overflow-hidden flex flex-col"
           onClick={(e) => e.stopPropagation()}
         >
           {/* Header */}
-          <div className="flex items-center justify-between p-6 border-b border-white/5 bg-[#232e3c]">
-            <h2 className="text-2xl font-bold text-white flex items-center gap-2">
-              <Users className="text-blue-400" />
+          <div className="ios-modal-header">
+            <h2 className="text-xl font-bold text-white flex items-center gap-2">
+              <Users className="text-blue-400" size={22} />
               {t('referral_title')}
             </h2>
             <button
               onClick={onClose}
-              className="p-2 hover:bg-white/5 rounded-full text-gray-400 hover:text-white transition-colors"
+              className="ios-icon-btn"
             >
-              <X size={24} />
+              <X size={18} />
             </button>
           </div>
 
           {/* Stats */}
           <div className="p-6 grid grid-cols-2 gap-4 border-b border-white/5">
-            <div className="bg-[#232e3c] rounded-2xl p-4 text-center">
+            <div className="ios-stat p-4 text-center">
               <div className="text-3xl font-bold text-white">{loading ? '...' : referralStats.count}</div>
-              <div className="text-gray-400 text-sm mt-1">{t('invited')}</div>
+              <div className="text-white/50 text-sm mt-1">{t('invited')}</div>
             </div>
-            <div className="bg-[#232e3c] rounded-2xl p-4 text-center">
+            <div className="ios-stat p-4 text-center">
               <div className="text-3xl font-bold text-yellow-400 flex items-center justify-center gap-1">
                 {loading ? '...' : referralStats.earned}
                 <Star size={20} className="fill-yellow-400" />
               </div>
-              <div className="text-gray-400 text-sm mt-1">{t('earned')}</div>
+              <div className="text-white/50 text-sm mt-1">{t('earned')}</div>
             </div>
           </div>
 
           {/* Info */}
           <div className="p-6 text-center">
-            <p className="text-gray-400 mb-4" dangerouslySetInnerHTML={{ __html: t('referral_hint') }} />
+            <p className="text-white/50 mb-4" dangerouslySetInnerHTML={{ __html: t('referral_hint') }} />
 
             <button
-              className="w-full bg-[#0098ea] hover:bg-[#0098ea]/90 text-white font-bold py-3 px-6 rounded-xl transition-all active:scale-95 flex items-center justify-center gap-2"
+              className="ios-btn ios-btn-primary w-full py-4 text-lg flex items-center justify-center gap-2"
               onClick={async () => {
                 // @ts-ignore
                 if (window.Telegram?.WebApp && userId) {

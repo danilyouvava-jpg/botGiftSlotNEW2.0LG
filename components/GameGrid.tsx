@@ -44,7 +44,7 @@ const GameGrid: React.FC<GameGridProps> = ({
   };
 
   return (
-    <div className={`relative p-3 rounded-3xl border border-white/10 shadow-[0_20px_50px_rgba(0,0,0,0.5)] overflow-hidden ${currentTheme === 'flour' ? 'bg-[#52612D]' : currentTheme === 'obeziana' ? 'bg-[#393D2B]' : 'bg-[#17212b]'}`} style={{ contentVisibility: 'auto', contain: 'paint' }}>
+    <div className={`relative p-3 rounded-[28px] border border-white/10 shadow-[0_20px_50px_rgba(0,0,0,0.5)] overflow-hidden ${currentTheme === 'flour' ? 'bg-[#52612D]' : currentTheme === 'obeziana' ? 'bg-[#393D2B]' : 'bg-[#1c1c1e]'}`} style={{ contentVisibility: 'auto', contain: 'paint' }}>
       {/* Decorative Top Shine */}
       <div className="absolute top-0 left-10 right-10 h-[1px] bg-gradient-to-r from-transparent via-blue-400/50 to-transparent" />
 
@@ -107,7 +107,7 @@ const GameGrid: React.FC<GameGridProps> = ({
             className="absolute inset-0 pointer-events-none z-30 flex items-center justify-center"
         >
             <div className="bg-gradient-to-br from-yellow-500 to-orange-600 p-[2px] rounded-2xl shadow-[0_0_50px_rgba(255,165,0,0.6)]">
-                <div className="bg-[#17212b] px-10 py-6 rounded-2xl flex flex-col items-center border border-white/10">
+                <div className="bg-[#1c1c1e] px-10 py-6 rounded-2xl flex flex-col items-center border border-white/10">
                     <span className="text-yellow-400 font-black uppercase text-2xl tracking-widest drop-shadow-md">{t('big_win')}</span>
                     <span className="text-5xl font-bold text-white mt-2 drop-shadow-lg tracking-tighter">{winData?.winAmount.toFixed(2)}</span>
                 </div>
@@ -121,7 +121,7 @@ const GameGrid: React.FC<GameGridProps> = ({
       {gameState === GameState.BONUS_PAYOUT && (
         <motion.div 
             initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-            className="absolute inset-0 pointer-events-none z-30 flex items-center justify-center bg-black/60 backdrop-blur-sm rounded-3xl"
+            className="ios-overlay absolute inset-0 pointer-events-none z-30 flex items-center justify-center rounded-3xl"
         >
             <div className="text-center">
                 <motion.div 

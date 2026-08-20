@@ -177,27 +177,27 @@ export default function DailyRouletteModal({ isOpen, onClose, userId, onWin }: D
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
                 exit={{ opacity: 0 }}
-                className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm"
+className="ios-overlay fixed inset-0 z-50 flex items-center justify-center p-4"
                 onClick={onClose}
-            >
+              >
                 <motion.div
                     initial={{ scale: 0.9, opacity: 0, y: 20 }}
                     animate={{ scale: 1, opacity: 1, y: 0 }}
                     exit={{ scale: 0.9, opacity: 0, y: 20 }}
-                    className="bg-[#17212b] w-full max-w-md rounded-3xl overflow-hidden flex flex-col shadow-2xl border border-white/10"
+                    className="ios-modal w-full max-w-md overflow-hidden flex flex-col"
                     onClick={(e) => e.stopPropagation()}
                 >
                     {/* Header */}
-                    <div className="flex items-center justify-between p-4 border-b border-white/5 bg-[#232e3c]">
+                    <div className="ios-modal-header">
                         <h2 className="text-xl font-bold text-white flex items-center gap-2">
-                            <Gift className="text-gray-400" />
+                            <Gift className="text-white/60" size={22} />
                             {t('roulette_title')}
                         </h2>
                         <button
                             onClick={onClose}
-                            className="p-2 hover:bg-white/5 rounded-full text-gray-400 hover:text-white transition-colors"
+                            className="ios-icon-btn"
                         >
-                            <X size={24} />
+                            <X size={18} />
                         </button>
                     </div>
 
@@ -319,13 +319,7 @@ export default function DailyRouletteModal({ isOpen, onClose, userId, onWin }: D
                         <button
                             onClick={handleSpin}
                             disabled={isSpinning || !canSpin}
-                            className={`
-                                w-full py-4 rounded-xl font-bold text-lg transition-all
-                                ${isSpinning || !canSpin
-                                    ? 'bg-gray-700 text-gray-500 cursor-not-allowed'
-                                    : 'bg-gradient-to-r from-blue-500 to-blue-600 text-white shadow-lg shadow-blue-500/30 active:scale-95'
-                                }
-                            `}
+                            className="ios-btn ios-btn-primary w-full py-4 text-lg"
                         >
                             {isSpinning ? t('spinning') : !canSpin ? `${t('available_in')} ${timeLeft || '...'}` : t('spin')}
                         </button>

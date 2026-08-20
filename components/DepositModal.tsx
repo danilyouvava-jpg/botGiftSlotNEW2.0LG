@@ -96,14 +96,14 @@ export default function DepositModal({ isOpen, onClose, onDeposit, onWithdraw, o
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
         exit={{ opacity: 0 }}
-        className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm"
+        className="ios-overlay fixed inset-0 z-50 flex items-center justify-center p-4"
         onClick={onClose}
       >
         <motion.div
           initial={{ scale: 0.9, opacity: 0, y: 20 }}
           animate={{ scale: 1, opacity: 1, y: 0 }}
           exit={{ scale: 0.9, opacity: 0, y: 20 }}
-          className="bg-[#17212b] w-full max-w-md rounded-3xl overflow-hidden flex flex-col shadow-2xl border border-white/10 relative"
+          className="ios-modal w-full max-w-md overflow-hidden flex flex-col"
           onClick={(e) => e.stopPropagation()}
         >
            {/* Success Overlay */}
@@ -121,48 +121,36 @@ export default function DepositModal({ isOpen, onClose, onDeposit, onWithdraw, o
            )}
 
           {/* Header */}
-          <div className="flex items-center justify-between p-6 border-b border-white/5 bg-[#232e3c]">
+          <div className="ios-modal-header">
             <h2 className="text-xl font-bold text-white flex items-center gap-2">
-              <CreditCard className="text-blue-400" />
+              <CreditCard className="text-blue-400" size={22} />
               {t('wallet')}
             </h2>
-            <button 
+            <button
               onClick={onClose}
-              className="p-2 hover:bg-white/5 rounded-full text-gray-400 hover:text-white transition-colors"
+              className="ios-icon-btn"
             >
-              <X size={24} />
+              <X size={18} />
             </button>
           </div>
 
           {/* Tabs */}
-          <div className="grid grid-cols-3 p-2 gap-2 bg-[#1c2533]">
+          <div className="ios-segmented grid grid-cols-3 m-4 mb-0">
               <button
                   onClick={() => setActiveTab('deposit')}
-                  className={`py-3 rounded-xl font-bold text-sm transition-all ${
-                      activeTab === 'deposit' 
-                      ? 'bg-[#2c3847] text-white shadow-lg' 
-                      : 'text-gray-500 hover:text-gray-300'
-                  }`}
+                  className={activeTab === 'deposit' ? 'active' : ''}
               >
                   {t('deposit_tab')}
               </button>
               <button
                   onClick={() => setActiveTab('withdrawal')}
-                  className={`py-3 rounded-xl font-bold text-sm transition-all ${
-                      activeTab === 'withdrawal' 
-                      ? 'bg-[#2c3847] text-white shadow-lg' 
-                      : 'text-gray-500 hover:text-gray-300'
-                  }`}
+                  className={activeTab === 'withdrawal' ? 'active' : ''}
               >
                   {t('withdraw_tab')}
               </button>
               <button
                   onClick={() => setActiveTab('promo')}
-                  className={`py-3 rounded-xl font-bold text-sm transition-all ${
-                      activeTab === 'promo' 
-                      ? 'bg-[#2c3847] text-white shadow-lg' 
-                      : 'text-gray-500 hover:text-gray-300'
-                  }`}
+                  className={activeTab === 'promo' ? 'active' : ''}
               >
                   {t('promo_tab')}
               </button>
@@ -179,11 +167,7 @@ export default function DepositModal({ isOpen, onClose, onDeposit, onWithdraw, o
                             <button
                                 key={val}
                                 onClick={() => setAmount(val.toString())}
-                                className={`py-2 rounded-xl border transition-all font-bold ${
-                                    amount === val.toString() 
-                                    ? (activeCurrency === 'TON' ? 'bg-blue-500/20 border-blue-500 text-blue-400' : 'bg-yellow-500/20 border-yellow-500 text-yellow-400')
-                                    : 'bg-white/5 border-white/5 hover:bg-white/10 text-gray-300'
-                                }`}
+                                className={`ios-chip ${amount === val.toString() ? 'selected-gold' : ''}`}
                             >
                                 {val}
                             </button>
@@ -197,9 +181,9 @@ export default function DepositModal({ isOpen, onClose, onDeposit, onWithdraw, o
                             value={amount}
                             onChange={(e) => setAmount(e.target.value)}
                             placeholder={t('enter_amount')}
-                            className="w-full bg-black/20 border border-white/10 rounded-xl py-3 px-4 text-white placeholder-gray-500 focus:outline-none focus:border-blue-500 transition-colors font-mono"
+                            className="ios-input w-full font-mono"
                         />
-                        <span className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-500 font-bold text-xs">
+                        <span className="absolute right-4 top-1/2 -translate-y-1/2 text-white/40 font-bold text-xs">
                             {activeCurrency}
                         </span>
                     </div>
@@ -208,11 +192,7 @@ export default function DepositModal({ isOpen, onClose, onDeposit, onWithdraw, o
                     <button
                         onClick={handleDeposit}
                         disabled={!amount || parseFloat(amount) <= 0}
-                        className={`w-full py-4 rounded-xl font-bold text-lg shadow-lg transition-all ${
-                            !amount || parseFloat(amount) <= 0
-                            ? 'bg-gray-700 text-gray-500 cursor-not-allowed'
-                            : (activeCurrency === 'TON' ? 'bg-blue-500 hover:bg-blue-600 text-white shadow-blue-500/25' : 'bg-yellow-500 hover:bg-yellow-600 text-white shadow-yellow-500/25')
-                        }`}
+                        className="ios-btn ios-btn-gold w-full py-4 text-lg"
                     >
                         {t('pay')} {amount ? `${amount} ${activeCurrency}` : ''}
                     </button>
@@ -226,11 +206,7 @@ export default function DepositModal({ isOpen, onClose, onDeposit, onWithdraw, o
                             <button
                                 key={val}
                                 onClick={() => setAmount(val.toString())}
-                                className={`py-2 rounded-xl border transition-all font-bold ${
-                                    amount === val.toString() 
-                                    ? 'bg-purple-500/20 border-purple-500 text-purple-400'
-                                    : 'bg-white/5 border-white/5 hover:bg-white/10 text-gray-300'
-                                }`}
+                                className={`ios-chip ${amount === val.toString() ? 'selected-purple' : ''}`}
                             >
                                 {val}
                             </button>
@@ -244,14 +220,14 @@ export default function DepositModal({ isOpen, onClose, onDeposit, onWithdraw, o
                             value={amount}
                             onChange={(e) => setAmount(e.target.value)}
                             placeholder={t('enter_withdraw_amount')}
-                            className="w-full bg-black/20 border border-white/10 rounded-xl py-3 px-4 text-white placeholder-gray-500 focus:outline-none focus:border-purple-500 transition-colors font-mono"
+                            className="ios-input w-full font-mono"
                         />
-                        <span className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-500 font-bold text-xs">
+                        <span className="absolute right-4 top-1/2 -translate-y-1/2 text-white/40 font-bold text-xs">
                             STARS
                         </span>
                     </div>
 
-                    <div className="text-xs text-gray-500 px-2">
+                    <div className="text-xs text-white/40 px-2">
                         {t('min_withdraw')}
                     </div>
 
@@ -259,11 +235,7 @@ export default function DepositModal({ isOpen, onClose, onDeposit, onWithdraw, o
                     <button
                         onClick={handleWithdraw}
                         disabled={!amount || parseFloat(amount) < 500}
-                        className={`w-full py-4 rounded-xl font-bold text-lg shadow-lg transition-all ${
-                            !amount || parseFloat(amount) < 500
-                            ? 'bg-gray-700 text-gray-500 cursor-not-allowed'
-                            : 'bg-purple-500 hover:bg-purple-600 text-white shadow-purple-500/25'
-                        }`}
+                        className="ios-btn ios-btn-purple w-full py-4 text-lg"
                     >
                         {t('withdraw_btn')} {amount ? `${amount} STARS` : ''}
                     </button>
@@ -272,12 +244,12 @@ export default function DepositModal({ isOpen, onClose, onDeposit, onWithdraw, o
                 <>
                    {/* Promo Content */}
                    <div className="flex flex-col gap-4">
-                       <div className="bg-white/5 p-4 rounded-xl border border-white/10">
+                       <div className="ios-card p-4">
                            <h3 className="font-bold text-white mb-2 flex items-center gap-2">
                                <Star className="text-yellow-400" size={20} />
                                {t('promo_title')}
                            </h3>
-                           <p className="text-sm text-gray-400 mb-4">
+                           <p className="text-sm text-white/50 mb-4">
                                {t('promo_hint')}
                            </p>
                            
@@ -287,7 +259,7 @@ export default function DepositModal({ isOpen, onClose, onDeposit, onWithdraw, o
                                    value={promoCode}
                                    onChange={(e) => setPromoCode(e.target.value)}
                                    placeholder={t('enter_promo')}
-                                   className="w-full bg-black/20 border border-white/10 rounded-xl py-3 px-4 text-white placeholder-gray-500 focus:outline-none focus:border-yellow-500 transition-colors font-mono uppercase"
+                                   className="ios-input w-full font-mono uppercase"
                                />
                            </div>
                        </div>
@@ -295,11 +267,7 @@ export default function DepositModal({ isOpen, onClose, onDeposit, onWithdraw, o
                         <button
                             onClick={handlePromo}
                             disabled={!promoCode}
-                            className={`w-full py-4 rounded-xl font-bold text-lg shadow-lg transition-all ${
-                                !promoCode
-                                ? 'bg-gray-700 text-gray-500 cursor-not-allowed'
-                                : 'bg-yellow-500 hover:bg-yellow-600 text-white shadow-yellow-500/25 active:scale-95'
-                            }`}
+                            className="ios-btn ios-btn-gold w-full py-4 text-lg"
                         >
                             {t('activate')}
                         </button>
